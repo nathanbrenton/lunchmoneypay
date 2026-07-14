@@ -23,4 +23,5 @@ def test_health_returns_service_status() -> None:
     assert response.json() == {
         "status": "ok",
         "service": "LunchMoneyPay",
+        "environment": "development",
     }
