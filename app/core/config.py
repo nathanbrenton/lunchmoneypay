@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     app_environment: str = "development"
     api_v1_prefix: str = "/api/v1"
+    database_url: str = (
+        "postgresql+psycopg://lunchmoneypay:lunchmoneypay@"
+        "127.0.0.1:5432/lunchmoneypay"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
