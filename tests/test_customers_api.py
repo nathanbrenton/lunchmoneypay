@@ -133,3 +133,101 @@ def test_create_customer_returns_conflict_for_duplicate(
             "already exists for this merchant."
         ),
     }
+
+
+def test_get_customer_returns_customer_owned_by_authenticated_merchant(
+    monkeypatch,
+) -> None:
+    customer_id = uuid.uuid4()
+    merchant_id = uuid.uuid4()
+    timestamp = datetime.now(UTC)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    customer = Customer(
+        id=customer_id,
+        merchant_id=merchant_id,
+        external_reference="homesteady-user-123",
+        display_name="Example Customer",
+        email="customer@example.com",
+        status="active",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    monkeypatch.setattr(
+        customers,
+        "get_customer",
+        lambda session, merchant_id, customer_id: customer,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = (
+        lambda: credential
+    )
+
+    try:
+        response = client.get(
+            f"/api/v1/customers/{customer_id}",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": str(customer_id),
+        "merchant_id": str(merchant_id),
+        "external_reference": "homesteady-user-123",
+        "display_name": "Example Customer",
+        "email": "customer@example.com",
+        "status": "active",
+        "created_at": timestamp.isoformat().replace("+00:00", "Z"),
+        "updated_at": timestamp.isoformat().replace("+00:00", "Z"),
+    }
+
+
+def test_get_customer_returns_not_found(
+    monkeypatch,
+) -> None:
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    def raise_not_found(session, merchant_id, customer_id):
+        raise customers.CustomerNotFoundError(customer_id)
+
+    monkeypatch.setattr(
+        customers,
+        "get_customer",
+        raise_not_found,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = (
+        lambda: credential
+    )
+
+    try:
+        response = client.get(
+            f"/api/v1/customers/{customer_id}",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Customer not found.",
+    }

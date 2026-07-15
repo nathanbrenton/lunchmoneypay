@@ -1,12 +1,17 @@
 """Customer API endpoints."""
 
+import uuid
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import AuthenticatedCredential, DatabaseSession
 from app.models.customer import Customer
 from app.schemas.customer import CustomerCreate, CustomerRead
-from app.services.customer import create_customer
-from app.services.exceptions import CustomerAlreadyExistsError
+from app.services.customer import create_customer, get_customer
+from app.services.exceptions import (
+    CustomerAlreadyExistsError,
+    CustomerNotFoundError,
+)
 
 router = APIRouter(
     prefix="/customers",
@@ -39,4 +44,28 @@ def create_customer_endpoint(
                 "A customer with this external reference "
                 "already exists for this merchant."
             ),
+        ) from exc
+
+
+@router.get(
+    "/{customer_id}",
+    response_model=CustomerRead,
+)
+def get_customer_endpoint(
+    customer_id: uuid.UUID,
+    credential: AuthenticatedCredential,
+    session: DatabaseSession,
+) -> Customer:
+    """Return a customer owned by the authenticated merchant."""
+
+    try:
+        return get_customer(
+            session=session,
+            merchant_id=credential.merchant_id,
+            customer_id=customer_id,
+        )
+    except CustomerNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found.",
         ) from exc
