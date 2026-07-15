@@ -18,6 +18,7 @@ from app.services.exceptions import (
 from app.services.payment_intent import (
     create_payment_intent,
     get_payment_intent,
+    list_payment_intents,
 )
 
 router = APIRouter(
@@ -57,6 +58,22 @@ def create_payment_intent_endpoint(
                 "already exists for this merchant."
             ),
         ) from exc
+
+
+@router.get(
+    "",
+    response_model=list[PaymentIntentRead],
+)
+def list_payment_intents_endpoint(
+    credential: AuthenticatedCredential,
+    session: DatabaseSession,
+) -> list[PaymentIntent]:
+    """Return payment intents owned by the authenticated merchant."""
+
+    return list_payment_intents(
+        session=session,
+        merchant_id=credential.merchant_id,
+    )
 
 
 @router.get(

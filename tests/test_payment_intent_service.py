@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 from app.models.customer import Customer
 from app.models.payment_intent import PaymentIntent
 from app.schemas.payment_intent import PaymentIntentCreate
-from app.services.payment_intent import create_payment_intent, get_payment_intent
+from app.services.payment_intent import (
+    create_payment_intent,
+    get_payment_intent,
+    list_payment_intents,
+)
 
 
 def test_create_payment_intent_uses_authenticated_merchant() -> None:
@@ -193,3 +197,64 @@ def test_get_payment_intent_rejects_record_owned_by_another_merchant() -> None:
             merchant_id=authenticated_merchant_id,
             payment_intent_id=payment_intent_id,
         )
+
+
+def test_list_payment_intents_filters_by_merchant_and_orders_results() -> None:
+    """List payment intents within the authenticated merchant boundary."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+
+    expected_results = [
+        PaymentIntent(
+            id=uuid.uuid4(),
+            merchant_id=merchant_id,
+            customer_id=uuid.uuid4(),
+            external_reference="homesteady-payment-001",
+            amount_minor=2500,
+            currency="USD",
+            status="requires_payment_method",
+        ),
+        PaymentIntent(
+            id=uuid.uuid4(),
+            merchant_id=merchant_id,
+            customer_id=uuid.uuid4(),
+            external_reference="homesteady-payment-002",
+            amount_minor=5000,
+            currency="USD",
+            status="requires_payment_method",
+        ),
+    ]
+
+    session.scalars.return_value = expected_results
+
+    result = list_payment_intents(
+        session=session,
+        merchant_id=merchant_id,
+    )
+
+    assert result == expected_results
+
+    statement = session.scalars.call_args.args[0]
+    compiled = str(statement)
+
+    assert "payment_intents.merchant_id" in compiled
+    assert "payment_intents.created_at" in compiled
+    assert "payment_intents.id" in compiled
+
+
+def test_list_payment_intents_returns_empty_list() -> None:
+    """Return an empty list when the merchant has no payment intents."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+
+    session.scalars.return_value = []
+
+    result = list_payment_intents(
+        session=session,
+        merchant_id=merchant_id,
+    )
+
+    assert result == []
+    session.scalars.assert_called_once()

@@ -323,3 +323,103 @@ def test_get_payment_intent_returns_not_found(
     assert response.json() == {
         "detail": "Payment intent not found.",
     }
+
+
+def test_list_payment_intents_uses_authenticated_merchant_and_returns_empty_list(
+    monkeypatch,
+) -> None:
+    """List payment intents within the authenticated merchant boundary."""
+
+    merchant_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    received_merchant_ids: list[uuid.UUID] = []
+
+    def fake_list_payment_intents(session, merchant_id):
+        received_merchant_ids.append(merchant_id)
+        return []
+
+    monkeypatch.setattr(
+        payment_intents,
+        "list_payment_intents",
+        fake_list_payment_intents,
+        raising=False,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.get("/api/v1/payment-intents")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert received_merchant_ids == [merchant_id]
+
+
+def test_list_payment_intents_returns_serialized_records(
+    monkeypatch,
+) -> None:
+    """Return merchant payment intents as PaymentIntentRead records."""
+
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    timestamp = datetime.now(UTC)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    payment_intent = PaymentIntent(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        external_reference="homesteady-payment-123",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    monkeypatch.setattr(
+        payment_intents,
+        "list_payment_intents",
+        lambda session, merchant_id: [payment_intent],
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.get("/api/v1/payment-intents")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": str(payment_intent.id),
+            "merchant_id": str(merchant_id),
+            "customer_id": str(customer_id),
+            "external_reference": "homesteady-payment-123",
+            "amount_minor": 2500,
+            "currency": "USD",
+            "status": "requires_payment_method",
+            "created_at": timestamp.isoformat().replace("+00:00", "Z"),
+            "updated_at": timestamp.isoformat().replace("+00:00", "Z"),
+        },
+    ]

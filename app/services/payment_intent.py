@@ -2,6 +2,7 @@
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -72,3 +73,21 @@ def get_payment_intent(
         raise PaymentIntentNotFoundError(payment_intent_id)
 
     return payment_intent
+
+
+def list_payment_intents(
+    session: Session,
+    merchant_id: uuid.UUID,
+) -> list[PaymentIntent]:
+    """Return payment intents owned by the specified merchant."""
+
+    statement = (
+        select(PaymentIntent)
+        .where(PaymentIntent.merchant_id == merchant_id)
+        .order_by(
+            PaymentIntent.created_at,
+            PaymentIntent.id,
+        )
+    )
+
+    return list(session.scalars(statement))
