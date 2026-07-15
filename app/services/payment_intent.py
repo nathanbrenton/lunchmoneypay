@@ -11,6 +11,7 @@ from app.schemas.payment_intent import PaymentIntentCreate
 from app.services.exceptions import (
     CustomerNotFoundError,
     PaymentIntentAlreadyExistsError,
+    PaymentIntentNotFoundError,
 )
 
 
@@ -51,5 +52,23 @@ def create_payment_intent(
         ) from exc
 
     session.refresh(payment_intent)
+
+    return payment_intent
+
+
+def get_payment_intent(
+    session: Session,
+    merchant_id: uuid.UUID,
+    payment_intent_id: uuid.UUID,
+) -> PaymentIntent:
+    """Return a payment intent owned by the specified merchant."""
+
+    payment_intent = session.get(
+        PaymentIntent,
+        payment_intent_id,
+    )
+
+    if payment_intent is None or payment_intent.merchant_id != merchant_id:
+        raise PaymentIntentNotFoundError(payment_intent_id)
 
     return payment_intent

@@ -208,3 +208,118 @@ def test_create_payment_intent_returns_conflict_for_duplicate_reference(
             "already exists for this merchant."
         ),
     }
+
+
+def test_get_payment_intent_uses_authenticated_merchant(
+    monkeypatch,
+) -> None:
+    """Retrieve a payment intent within the authenticated merchant boundary."""
+
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    timestamp = datetime.now(UTC)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        external_reference="homesteady-payment-123",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    received_arguments = {}
+
+    def fake_get_payment_intent(
+        session,
+        merchant_id,
+        payment_intent_id,
+    ):
+        received_arguments["merchant_id"] = merchant_id
+        received_arguments["payment_intent_id"] = payment_intent_id
+        return payment_intent
+
+    monkeypatch.setattr(
+        payment_intents,
+        "get_payment_intent",
+        fake_get_payment_intent,
+        raising=False,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.get(
+            f"/api/v1/payment-intents/{payment_intent_id}",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(payment_intent_id)
+    assert response.json()["merchant_id"] == str(merchant_id)
+
+    assert received_arguments == {
+        "merchant_id": merchant_id,
+        "payment_intent_id": payment_intent_id,
+    }
+
+
+def test_get_payment_intent_returns_not_found(
+    monkeypatch,
+) -> None:
+    """Return 404 when the payment intent is missing or merchant-inaccessible."""
+
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    def raise_not_found(
+        session,
+        merchant_id,
+        payment_intent_id,
+    ):
+        raise payment_intents.PaymentIntentNotFoundError(
+            payment_intent_id,
+        )
+
+    monkeypatch.setattr(
+        payment_intents,
+        "get_payment_intent",
+        raise_not_found,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.get(
+            f"/api/v1/payment-intents/{payment_intent_id}",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Payment intent not found.",
+    }

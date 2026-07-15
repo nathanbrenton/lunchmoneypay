@@ -37,3 +37,7 @@ class PaymentIntentAlreadyExistsError(Exception):
             "A payment intent with this external reference "
             "already exists for this merchant."
         )
+
+
+class PaymentIntentNotFoundError(Exception):
+    """Raised when a payment intent cannot be found for a merchant."""

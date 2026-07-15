@@ -1,5 +1,7 @@
 """Payment-intent API endpoints."""
 
+import uuid
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import AuthenticatedCredential, DatabaseSession
@@ -11,8 +13,12 @@ from app.schemas.payment_intent import (
 from app.services.exceptions import (
     CustomerNotFoundError,
     PaymentIntentAlreadyExistsError,
+    PaymentIntentNotFoundError,
 )
-from app.services.payment_intent import create_payment_intent
+from app.services.payment_intent import (
+    create_payment_intent,
+    get_payment_intent,
+)
 
 router = APIRouter(
     prefix="/payment-intents",
@@ -50,4 +56,28 @@ def create_payment_intent_endpoint(
                 "A payment intent with this external reference "
                 "already exists for this merchant."
             ),
+        ) from exc
+
+
+@router.get(
+    "/{payment_intent_id}",
+    response_model=PaymentIntentRead,
+)
+def get_payment_intent_endpoint(
+    payment_intent_id: uuid.UUID,
+    credential: AuthenticatedCredential,
+    session: DatabaseSession,
+) -> PaymentIntent:
+    """Return a payment intent owned by the authenticated merchant."""
+
+    try:
+        return get_payment_intent(
+            session=session,
+            merchant_id=credential.merchant_id,
+            payment_intent_id=payment_intent_id,
+        )
+    except PaymentIntentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment intent not found.",
         ) from exc
