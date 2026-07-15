@@ -23,3 +23,17 @@ class CustomerAlreadyExistsError(Exception):
 
 class CustomerNotFoundError(Exception):
     """Raised when a customer cannot be found for a merchant."""
+
+
+class PaymentIntentAlreadyExistsError(Exception):
+    """Raised when a merchant reuses a payment-intent reference."""
+
+    def __init__(self, external_reference: str) -> None:
+        """Store the conflicting merchant-side reference."""
+
+        self.external_reference = external_reference
+
+        super().__init__(
+            "A payment intent with this external reference "
+            "already exists for this merchant."
+        )
