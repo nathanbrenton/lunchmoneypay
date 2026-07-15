@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
 from app.schemas.customer import CustomerCreate
-from app.services.customer import create_customer, get_customer
+from app.services.customer import (
+    create_customer,
+    get_customer,
+    list_customers,
+)
 from app.services.exceptions import (
     CustomerAlreadyExistsError,
     CustomerNotFoundError,
@@ -128,3 +132,47 @@ def test_get_customer_rejects_customer_owned_by_another_merchant() -> None:
             merchant_id=merchant_id,
             customer_id=customer_id,
         )
+
+
+def test_list_customers_returns_merchant_owned_customers() -> None:
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+
+    first = Customer(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        external_reference="homesteady-user-123",
+        display_name="First Customer",
+        status="active",
+    )
+    second = Customer(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        external_reference="homesteady-user-456",
+        display_name="Second Customer",
+        status="active",
+    )
+
+    session.scalars.return_value = [first, second]
+
+    result = list_customers(
+        session=session,
+        merchant_id=merchant_id,
+    )
+
+    assert result == [first, second]
+    session.scalars.assert_called_once()
+
+
+def test_list_customers_returns_empty_list() -> None:
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    session.scalars.return_value = []
+
+    result = list_customers(
+        session=session,
+        merchant_id=merchant_id,
+    )
+
+    assert result == []
+    session.scalars.assert_called_once()

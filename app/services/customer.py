@@ -2,6 +2,7 @@
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -59,3 +60,18 @@ def get_customer(
         raise CustomerNotFoundError(customer_id)
 
     return customer
+
+
+def list_customers(
+    session: Session,
+    merchant_id: uuid.UUID,
+) -> list[Customer]:
+    """Return customers owned by the specified merchant."""
+
+    statement = (
+        select(Customer)
+        .where(Customer.merchant_id == merchant_id)
+        .order_by(Customer.created_at, Customer.id)
+    )
+
+    return list(session.scalars(statement))
