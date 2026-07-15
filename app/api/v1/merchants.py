@@ -2,12 +2,13 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
 from app.models.merchant import Merchant
 from app.schemas.merchant import MerchantCreate, MerchantRead
+from app.services.exceptions import MerchantAlreadyExistsError
 from app.services.merchant import create_merchant
 
 router = APIRouter(
@@ -32,7 +33,13 @@ def create_merchant_endpoint(
 ) -> Merchant:
     """Create a merchant account."""
 
-    return create_merchant(
-        session=session,
-        merchant_create=merchant_create,
-    )
+    try:
+        return create_merchant(
+            session=session,
+            merchant_create=merchant_create,
+        )
+    except MerchantAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A merchant with this name already exists.",
+        ) from exc

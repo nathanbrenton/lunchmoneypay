@@ -1,9 +1,11 @@
 """Business logic for merchant operations."""
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.merchant import Merchant
 from app.schemas.merchant import MerchantCreate
+from app.services.exceptions import MerchantAlreadyExistsError
 
 
 def create_merchant(
@@ -17,7 +19,13 @@ def create_merchant(
     )
 
     session.add(merchant)
-    session.commit()
+
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise MerchantAlreadyExistsError(merchant_create.name) from exc
+
     session.refresh(merchant)
 
     return merchant

@@ -59,3 +59,31 @@ def test_create_merchant_returns_created_merchant(
         "created_at": timestamp.isoformat().replace("+00:00", "Z"),
         "updated_at": timestamp.isoformat().replace("+00:00", "Z"),
     }
+
+
+def test_create_merchant_returns_conflict_for_duplicate(
+    monkeypatch,
+) -> None:
+    def raise_duplicate(session, merchant_create):
+        raise merchants.MerchantAlreadyExistsError(merchant_create.name)
+
+    monkeypatch.setattr(
+        merchants,
+        "create_merchant",
+        raise_duplicate,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+
+    try:
+        response = client.post(
+            "/api/v1/merchants",
+            json={"name": "Homesteady"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "A merchant with this name already exists.",
+    }
