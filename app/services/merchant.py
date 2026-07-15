@@ -17,7 +17,7 @@ def create_merchant(
     )
 
     session.add(merchant)
-    session.flush()
+    session.commit()
     session.refresh(merchant)
 
     return merchant

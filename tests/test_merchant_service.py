@@ -22,5 +22,5 @@ def test_create_merchant_adds_and_refreshes_model() -> None:
     assert merchant.name == "Homesteady"
 
     session.add.assert_called_once_with(merchant)
-    session.flush.assert_called_once_with()
+    session.commit.assert_called_once_with()
     session.refresh.assert_called_once_with(merchant)
