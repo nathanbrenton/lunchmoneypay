@@ -9,6 +9,7 @@ from app.models.customer import Customer
 from app.models.payment_intent import PaymentIntent
 from app.schemas.payment_intent import PaymentIntentCreate
 from app.services.payment_intent import (
+    cancel_payment_intent,
     confirm_payment_intent,
     create_payment_intent,
     get_payment_intent,
@@ -322,6 +323,76 @@ def test_confirm_payment_intent_rejects_invalid_status() -> None:
 
     with pytest.raises(PaymentIntentInvalidStateError):
         confirm_payment_intent(
+            session=session,
+            merchant_id=merchant_id,
+            payment_intent_id=payment_intent_id,
+        )
+
+    session.commit.assert_not_called()
+    session.refresh.assert_not_called()
+
+
+def test_cancel_payment_intent_marks_payment_as_canceled() -> None:
+    """Cancel an eligible payment intent."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        external_reference="homesteady-payment-123",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+
+    session.get.return_value = payment_intent
+
+    result = cancel_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert result is payment_intent
+    assert payment_intent.status == "canceled"
+
+    session.get.assert_called_once_with(
+        PaymentIntent,
+        payment_intent_id,
+    )
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(payment_intent)
+
+
+def test_cancel_payment_intent_rejects_invalid_status() -> None:
+    """Reject cancellation after a payment intent leaves its initial state."""
+
+    import pytest
+
+    from app.services.exceptions import PaymentIntentInvalidStateError
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        external_reference="homesteady-payment-123",
+        amount_minor=2500,
+        currency="USD",
+        status="succeeded",
+    )
+
+    session.get.return_value = payment_intent
+
+    with pytest.raises(PaymentIntentInvalidStateError):
+        cancel_payment_intent(
             session=session,
             merchant_id=merchant_id,
             payment_intent_id=payment_intent_id,

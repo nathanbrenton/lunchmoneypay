@@ -109,10 +109,38 @@ def confirm_payment_intent(
 
     if payment_intent.status != "requires_payment_method":
         raise PaymentIntentInvalidStateError(
+            "confirmed",
             payment_intent.status,
         )
 
     payment_intent.status = "succeeded"
+
+    session.commit()
+    session.refresh(payment_intent)
+
+    return payment_intent
+
+
+def cancel_payment_intent(
+    session: Session,
+    merchant_id: uuid.UUID,
+    payment_intent_id: uuid.UUID,
+) -> PaymentIntent:
+    """Cancel an eligible payment intent."""
+
+    payment_intent = get_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    if payment_intent.status != "requires_payment_method":
+        raise PaymentIntentInvalidStateError(
+            "canceled",
+            payment_intent.status,
+        )
+
+    payment_intent.status = "canceled"
 
     session.commit()
     session.refresh(payment_intent)

@@ -46,11 +46,16 @@ class PaymentIntentNotFoundError(Exception):
 class PaymentIntentInvalidStateError(Exception):
     """Raised when a payment intent cannot perform the requested transition."""
 
-    def __init__(self, current_status: str) -> None:
-        """Store the state that blocked the transition."""
+    def __init__(
+        self,
+        operation: str,
+        current_status: str,
+    ) -> None:
+        """Store the operation and state that blocked the transition."""
 
+        self.operation = operation
         self.current_status = current_status
 
         super().__init__(
-            f"Payment intent cannot be confirmed from status: {current_status}."
+            f"Payment intent cannot be {operation} from status: {current_status}."
         )
