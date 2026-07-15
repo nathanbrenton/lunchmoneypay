@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.core.api_keys import generate_api_key
+from app.models.merchant import Merchant
 from app.models.merchant_api_credential import MerchantApiCredential
+from app.services.exceptions import MerchantNotFoundError
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,11 @@ def create_merchant_api_credential(
     pepper: str,
 ) -> CreatedMerchantApiCredential:
     """Create and persist a merchant API credential."""
+
+    merchant = session.get(Merchant, merchant_id)
+
+    if merchant is None:
+        raise MerchantNotFoundError(merchant_id)
 
     generated = generate_api_key(pepper)
 

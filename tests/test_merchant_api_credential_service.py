@@ -3,9 +3,12 @@
 import uuid
 from unittest.mock import MagicMock
 
+import pytest
 from sqlalchemy.orm import Session
 
+from app.models.merchant import Merchant
 from app.models.merchant_api_credential import MerchantApiCredential
+from app.services.exceptions import MerchantNotFoundError
 from app.services.merchant_api_credential import (
     create_merchant_api_credential,
 )
@@ -16,6 +19,11 @@ TEST_PEPPER = "development-only-test-pepper"
 def test_create_merchant_api_credential_persists_safe_values() -> None:
     session = MagicMock(spec=Session)
     merchant_id = uuid.uuid4()
+    session.get.return_value = Merchant(
+        id=merchant_id,
+        name="Homesteady",
+        status="active",
+    )
 
     result = create_merchant_api_credential(
         session=session,
@@ -39,6 +47,11 @@ def test_create_merchant_api_credential_persists_safe_values() -> None:
 def test_create_merchant_api_credential_returns_unique_keys() -> None:
     session = MagicMock(spec=Session)
     merchant_id = uuid.uuid4()
+    session.get.return_value = Merchant(
+        id=merchant_id,
+        name="Homesteady",
+        status="active",
+    )
 
     first = create_merchant_api_credential(
         session=session,
@@ -54,3 +67,21 @@ def test_create_merchant_api_credential_returns_unique_keys() -> None:
     assert first.api_key != second.api_key
     assert first.credential.key_prefix != second.credential.key_prefix
     assert first.credential.secret_hash != second.credential.secret_hash
+
+
+def test_create_merchant_api_credential_rejects_missing_merchant() -> None:
+    session = MagicMock(spec=Session)
+    session.get.return_value = None
+    merchant_id = uuid.uuid4()
+
+    with pytest.raises(MerchantNotFoundError):
+        create_merchant_api_credential(
+            session=session,
+            merchant_id=merchant_id,
+            pepper=TEST_PEPPER,
+        )
+
+    session.get.assert_called_once_with(Merchant, merchant_id)
+    session.add.assert_not_called()
+    session.commit.assert_not_called()
+    session.refresh.assert_not_called()
