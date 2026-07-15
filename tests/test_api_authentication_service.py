@@ -1,6 +1,7 @@
 """Tests for merchant API-key authentication."""
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,7 +13,10 @@ from app.services.api_authentication import (
     authenticate_api_key,
     extract_key_prefix,
 )
-from app.services.exceptions import InvalidApiKeyError
+from app.services.exceptions import (
+    InactiveApiCredentialError,
+    InvalidApiKeyError,
+)
 
 TEST_PEPPER = "development-only-test-pepper"
 
@@ -94,5 +98,56 @@ def test_authenticate_api_key_rejects_wrong_secret() -> None:
         authenticate_api_key(
             session=session,
             api_key=f"{generated.key_prefix}.wrong-secret",
+            pepper=TEST_PEPPER,
+        )
+
+
+def test_authenticate_api_key_rejects_revoked_credential() -> None:
+    session = MagicMock(spec=Session)
+    generated = generate_api_key(TEST_PEPPER)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=uuid.uuid4(),
+        key_prefix=generated.key_prefix,
+        secret_hash=generated.secret_hash,
+        status="revoked",
+    )
+
+    session.scalar.return_value = credential
+
+    with pytest.raises(
+        InactiveApiCredentialError,
+        match="API credential is not active",
+    ):
+        authenticate_api_key(
+            session=session,
+            api_key=generated.api_key,
+            pepper=TEST_PEPPER,
+        )
+
+
+def test_authenticate_api_key_rejects_expired_credential() -> None:
+    session = MagicMock(spec=Session)
+    generated = generate_api_key(TEST_PEPPER)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=uuid.uuid4(),
+        key_prefix=generated.key_prefix,
+        secret_hash=generated.secret_hash,
+        status="active",
+        expires_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+
+    session.scalar.return_value = credential
+
+    with pytest.raises(
+        InactiveApiCredentialError,
+        match="API credential has expired",
+    ):
+        authenticate_api_key(
+            session=session,
+            api_key=generated.api_key,
             pepper=TEST_PEPPER,
         )
