@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.customer import CustomerCreate, CustomerRead
+from app.schemas.customer import CustomerCreate, CustomerRead, CustomerUpdate
 
 
 def test_customer_create_accepts_valid_fields() -> None:
@@ -66,3 +66,77 @@ def test_customer_read_accepts_expected_fields() -> None:
     assert customer.id == customer_id
     assert customer.merchant_id == merchant_id
     assert customer.status == "active"
+
+
+def test_customer_update_accepts_partial_fields() -> None:
+    """Allow callers to update only the fields they provide."""
+
+    customer = CustomerUpdate(
+        display_name="Updated Customer",
+    )
+
+    assert customer.display_name == "Updated Customer"
+    assert customer.email is None
+    assert customer.status is None
+
+
+def test_customer_update_accepts_email_and_status() -> None:
+    """Accept valid optional update fields."""
+
+    customer = CustomerUpdate(
+        email="updated@example.com",
+        status="disabled",
+    )
+
+    assert str(customer.email) == "updated@example.com"
+    assert customer.status == "disabled"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("display_name", ""),
+        ("email", "not-an-email"),
+        ("status", "deleted"),
+    ],
+)
+def test_customer_update_rejects_invalid_fields(
+    field_name: str,
+    field_value: str,
+) -> None:
+    """Reject invalid customer update values."""
+
+    with pytest.raises(ValidationError):
+        CustomerUpdate(
+            **{field_name: field_value},
+        )
+
+
+def test_customer_update_tracks_only_provided_fields() -> None:
+    """Preserve which fields were explicitly included in the PATCH body."""
+
+    customer = CustomerUpdate(
+        status="disabled",
+    )
+
+    assert customer.model_dump(exclude_unset=True) == {
+        "status": "disabled",
+    }
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "display_name",
+        "status",
+    ],
+)
+def test_customer_update_rejects_null_for_required_model_fields(
+    field_name: str,
+) -> None:
+    """Reject null for customer fields that cannot be cleared."""
+
+    with pytest.raises(ValidationError):
+        CustomerUpdate(
+            **{field_name: None},
+        )

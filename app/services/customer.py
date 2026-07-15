@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
-from app.schemas.customer import CustomerCreate
+from app.schemas.customer import CustomerCreate, CustomerUpdate
 from app.services.exceptions import (
     CustomerAlreadyExistsError,
     CustomerNotFoundError,
@@ -26,9 +26,7 @@ def create_customer(
         external_reference=customer_create.external_reference,
         display_name=customer_create.display_name,
         email=(
-            str(customer_create.email)
-            if customer_create.email is not None
-            else None
+            str(customer_create.email) if customer_create.email is not None else None
         ),
     )
 
@@ -38,9 +36,7 @@ def create_customer(
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        raise CustomerAlreadyExistsError(
-            customer_create.external_reference
-        ) from exc
+        raise CustomerAlreadyExistsError(customer_create.external_reference) from exc
 
     session.refresh(customer)
 
@@ -75,3 +71,31 @@ def list_customers(
     )
 
     return list(session.scalars(statement))
+
+
+def update_customer(
+    session: Session,
+    merchant_id: uuid.UUID,
+    customer_id: uuid.UUID,
+    customer_update: CustomerUpdate,
+) -> Customer:
+    """Update a customer owned by the specified merchant."""
+
+    customer = get_customer(
+        session=session,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+    )
+
+    update_data = customer_update.model_dump(exclude_unset=True)
+
+    for field_name, field_value in update_data.items():
+        if field_name == "email" and field_value is not None:
+            field_value = str(field_value)
+
+        setattr(customer, field_name, field_value)
+
+    session.commit()
+    session.refresh(customer)
+
+    return customer

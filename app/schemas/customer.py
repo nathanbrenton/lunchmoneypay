@@ -37,3 +37,22 @@ class CustomerRead(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class CustomerUpdate(BaseModel):
+    """Request body for partially updating a customer."""
+
+    display_name: str = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        examples=["Updated Customer"],
+    )
+
+    email: EmailStr | None = None
+
+    status: str = Field(
+        default=None,
+        pattern="^(active|disabled)$",
+        examples=["active"],
+    )

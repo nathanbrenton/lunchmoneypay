@@ -317,3 +317,126 @@ def test_list_customers_returns_serialized_customers(
             "updated_at": timestamp.isoformat().replace("+00:00", "Z"),
         },
     ]
+
+
+def test_update_customer_uses_authenticated_merchant(
+    monkeypatch,
+) -> None:
+    """Update a customer within the authenticated merchant boundary."""
+
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    timestamp = datetime.now(UTC)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    customer = Customer(
+        id=customer_id,
+        merchant_id=merchant_id,
+        external_reference="homesteady-user-123",
+        display_name="Updated Customer",
+        email="customer@example.com",
+        status="active",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    received_arguments = {}
+
+    def fake_update_customer(
+        session,
+        merchant_id,
+        customer_id,
+        customer_update,
+    ):
+        received_arguments["merchant_id"] = merchant_id
+        received_arguments["customer_id"] = customer_id
+        received_arguments["customer_update"] = customer_update
+        return customer
+
+    monkeypatch.setattr(
+        customers,
+        "update_customer",
+        fake_update_customer,
+        raising=False,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.patch(
+            f"/api/v1/customers/{customer_id}",
+            json={
+                "display_name": "Updated Customer",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(customer_id)
+    assert response.json()["display_name"] == "Updated Customer"
+
+    assert received_arguments["merchant_id"] == merchant_id
+    assert received_arguments["customer_id"] == customer_id
+    assert received_arguments["customer_update"].model_dump(
+        exclude_unset=True,
+    ) == {
+        "display_name": "Updated Customer",
+    }
+
+
+def test_update_customer_returns_not_found(
+    monkeypatch,
+) -> None:
+    """Return 404 when the customer is missing or belongs to another merchant."""
+
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    def raise_not_found(
+        session,
+        merchant_id,
+        customer_id,
+        customer_update,
+    ):
+        raise customers.CustomerNotFoundError(customer_id)
+
+    monkeypatch.setattr(
+        customers,
+        "update_customer",
+        raise_not_found,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.patch(
+            f"/api/v1/customers/{customer_id}",
+            json={
+                "status": "disabled",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Customer not found.",
+    }

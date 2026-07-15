@@ -8,11 +8,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
-from app.schemas.customer import CustomerCreate
+from app.schemas.customer import CustomerCreate, CustomerUpdate
 from app.services.customer import (
     create_customer,
     get_customer,
     list_customers,
+    update_customer,
 )
 from app.services.exceptions import (
     CustomerAlreadyExistsError,
@@ -176,3 +177,74 @@ def test_list_customers_returns_empty_list() -> None:
 
     assert result == []
     session.scalars.assert_called_once()
+
+
+def test_update_customer_changes_only_provided_fields() -> None:
+    """Update supplied fields while preserving omitted customer data."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+
+    customer = Customer(
+        id=customer_id,
+        merchant_id=merchant_id,
+        external_reference="homesteady-user-123",
+        display_name="Original Customer",
+        email="original@example.com",
+        status="active",
+    )
+
+    session.get.return_value = customer
+
+    customer_update = CustomerUpdate(
+        display_name="Updated Customer",
+    )
+
+    result = update_customer(
+        session=session,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        customer_update=customer_update,
+    )
+
+    assert result is customer
+    assert customer.display_name == "Updated Customer"
+    assert customer.email == "original@example.com"
+    assert customer.status == "active"
+
+    session.get.assert_called_once_with(Customer, customer_id)
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(customer)
+
+
+def test_update_customer_rejects_customer_owned_by_another_merchant() -> None:
+    """Hide customers that do not belong to the requesting merchant."""
+
+    session = MagicMock(spec=Session)
+    authenticated_merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+
+    customer = Customer(
+        id=customer_id,
+        merchant_id=uuid.uuid4(),
+        external_reference="other-merchant-user",
+        display_name="Other Merchant Customer",
+        email="other@example.com",
+        status="active",
+    )
+
+    session.get.return_value = customer
+
+    with pytest.raises(CustomerNotFoundError):
+        update_customer(
+            session=session,
+            merchant_id=authenticated_merchant_id,
+            customer_id=customer_id,
+            customer_update=CustomerUpdate(
+                status="disabled",
+            ),
+        )
+
+    session.commit.assert_not_called()
+    session.refresh.assert_not_called()

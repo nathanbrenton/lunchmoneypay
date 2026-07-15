@@ -6,11 +6,16 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import AuthenticatedCredential, DatabaseSession
 from app.models.customer import Customer
-from app.schemas.customer import CustomerCreate, CustomerRead
+from app.schemas.customer import (
+    CustomerCreate,
+    CustomerRead,
+    CustomerUpdate,
+)
 from app.services.customer import (
     create_customer,
     get_customer,
     list_customers,
+    update_customer,
 )
 from app.services.exceptions import (
     CustomerAlreadyExistsError,
@@ -65,6 +70,32 @@ def list_customers_endpoint(
         session=session,
         merchant_id=credential.merchant_id,
     )
+
+
+@router.patch(
+    "/{customer_id}",
+    response_model=CustomerRead,
+)
+def update_customer_endpoint(
+    customer_id: uuid.UUID,
+    customer_update: CustomerUpdate,
+    credential: AuthenticatedCredential,
+    session: DatabaseSession,
+) -> Customer:
+    """Update a customer owned by the authenticated merchant."""
+
+    try:
+        return update_customer(
+            session=session,
+            merchant_id=credential.merchant_id,
+            customer_id=customer_id,
+            customer_update=customer_update,
+        )
+    except CustomerNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found.",
+        ) from exc
 
 
 @router.get(
