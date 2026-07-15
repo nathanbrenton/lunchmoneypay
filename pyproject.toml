@@ -7,7 +7,7 @@ name = "lunchmoneypay"
 version = "0.1.0"
 description = "Mock payment-processing service for Homesteady integrations."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 license = "MIT"
 authors = [
   { name = "Nathan Brenton" }

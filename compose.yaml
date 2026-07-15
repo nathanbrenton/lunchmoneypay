@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: lunchmoneypay-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: lunchmoneypay
+      POSTGRES_USER: lunchmoneypay
+      POSTGRES_PASSWORD: lunchmoneypay
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - lunchmoneypay-postgres-data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U lunchmoneypay -d lunchmoneypay",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  lunchmoneypay-postgres-data:

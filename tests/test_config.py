@@ -11,6 +11,5 @@ def test_settings_use_expected_defaults() -> None:
     assert settings.app_environment == "development"
     assert settings.api_v1_prefix == "/api/v1"
     assert settings.database_url == (
-        "postgresql+psycopg://lunchmoneypay:lunchmoneypay@"
-        "127.0.0.1:5432/lunchmoneypay"
+        "postgresql+psycopg://lunchmoneypay:lunchmoneypay@127.0.0.1:5432/lunchmoneypay"
     )

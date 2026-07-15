@@ -21,7 +21,7 @@ SessionLocal = sessionmaker(
 )
 
 
-def get_db_session() -> Generator[Session, None, None]:
+def get_db_session() -> Generator[Session]:
     """Provide one database session for an API request."""
 
     session = SessionLocal()
