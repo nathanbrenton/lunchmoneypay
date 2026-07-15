@@ -7,7 +7,11 @@ from fastapi import APIRouter, HTTPException, status
 from app.api.dependencies import AuthenticatedCredential, DatabaseSession
 from app.models.customer import Customer
 from app.schemas.customer import CustomerCreate, CustomerRead
-from app.services.customer import create_customer, get_customer
+from app.services.customer import (
+    create_customer,
+    get_customer,
+    list_customers,
+)
 from app.services.exceptions import (
     CustomerAlreadyExistsError,
     CustomerNotFoundError,
@@ -45,6 +49,22 @@ def create_customer_endpoint(
                 "already exists for this merchant."
             ),
         ) from exc
+
+
+@router.get(
+    "",
+    response_model=list[CustomerRead],
+)
+def list_customers_endpoint(
+    credential: AuthenticatedCredential,
+    session: DatabaseSession,
+) -> list[Customer]:
+    """Return customers owned by the authenticated merchant."""
+
+    return list_customers(
+        session=session,
+        merchant_id=credential.merchant_id,
+    )
 
 
 @router.get(

@@ -57,9 +57,7 @@ def test_create_customer_uses_authenticated_merchant(
     )
 
     app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_authenticated_credential] = (
-        lambda: credential
-    )
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
 
     try:
         response = client.post(
@@ -100,9 +98,7 @@ def test_create_customer_returns_conflict_for_duplicate(
     )
 
     def raise_duplicate(session, merchant_id, customer_create):
-        raise customers.CustomerAlreadyExistsError(
-            customer_create.external_reference
-        )
+        raise customers.CustomerAlreadyExistsError(customer_create.external_reference)
 
     monkeypatch.setattr(
         customers,
@@ -111,9 +107,7 @@ def test_create_customer_returns_conflict_for_duplicate(
     )
 
     app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_authenticated_credential] = (
-        lambda: credential
-    )
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
 
     try:
         response = client.post(
@@ -129,8 +123,7 @@ def test_create_customer_returns_conflict_for_duplicate(
     assert response.status_code == 409
     assert response.json() == {
         "detail": (
-            "A customer with this external reference "
-            "already exists for this merchant."
+            "A customer with this external reference already exists for this merchant."
         ),
     }
 
@@ -168,9 +161,7 @@ def test_get_customer_returns_customer_owned_by_authenticated_merchant(
     )
 
     app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_authenticated_credential] = (
-        lambda: credential
-    )
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
 
     try:
         response = client.get(
@@ -216,9 +207,7 @@ def test_get_customer_returns_not_found(
     )
 
     app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_authenticated_credential] = (
-        lambda: credential
-    )
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
 
     try:
         response = client.get(
@@ -231,3 +220,100 @@ def test_get_customer_returns_not_found(
     assert response.json() == {
         "detail": "Customer not found.",
     }
+
+
+def test_list_customers_uses_authenticated_merchant_and_returns_empty_list(
+    monkeypatch,
+) -> None:
+    """List customers within the authenticated merchant boundary."""
+
+    merchant_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    received_merchant_ids: list[uuid.UUID] = []
+
+    def fake_list_customers(session, merchant_id):
+        received_merchant_ids.append(merchant_id)
+        return []
+
+    monkeypatch.setattr(
+        customers,
+        "list_customers",
+        fake_list_customers,
+        raising=False,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.get("/api/v1/customers")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert received_merchant_ids == [merchant_id]
+
+
+def test_list_customers_returns_serialized_customers(
+    monkeypatch,
+) -> None:
+    """Return merchant customers as CustomerRead records."""
+
+    merchant_id = uuid.uuid4()
+    timestamp = datetime.now(UTC)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    customer = Customer(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        external_reference="homesteady-user-123",
+        display_name="Example Customer",
+        email="customer@example.com",
+        status="active",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    monkeypatch.setattr(
+        customers,
+        "list_customers",
+        lambda session, merchant_id: [customer],
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.get("/api/v1/customers")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": str(customer.id),
+            "merchant_id": str(merchant_id),
+            "external_reference": "homesteady-user-123",
+            "display_name": "Example Customer",
+            "email": "customer@example.com",
+            "status": "active",
+            "created_at": timestamp.isoformat().replace("+00:00", "Z"),
+            "updated_at": timestamp.isoformat().replace("+00:00", "Z"),
+        },
+    ]
