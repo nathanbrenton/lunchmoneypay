@@ -12,6 +12,7 @@ from app.schemas.payment_intent import PaymentIntentCreate
 from app.services.exceptions import (
     CustomerNotFoundError,
     PaymentIntentAlreadyExistsError,
+    PaymentIntentInvalidStateError,
     PaymentIntentNotFoundError,
 )
 
@@ -91,3 +92,29 @@ def list_payment_intents(
     )
 
     return list(session.scalars(statement))
+
+
+def confirm_payment_intent(
+    session: Session,
+    merchant_id: uuid.UUID,
+    payment_intent_id: uuid.UUID,
+) -> PaymentIntent:
+    """Confirm an eligible mock payment intent successfully."""
+
+    payment_intent = get_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    if payment_intent.status != "requires_payment_method":
+        raise PaymentIntentInvalidStateError(
+            payment_intent.status,
+        )
+
+    payment_intent.status = "succeeded"
+
+    session.commit()
+    session.refresh(payment_intent)
+
+    return payment_intent

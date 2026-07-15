@@ -13,9 +13,11 @@ from app.schemas.payment_intent import (
 from app.services.exceptions import (
     CustomerNotFoundError,
     PaymentIntentAlreadyExistsError,
+    PaymentIntentInvalidStateError,
     PaymentIntentNotFoundError,
 )
 from app.services.payment_intent import (
+    confirm_payment_intent,
     create_payment_intent,
     get_payment_intent,
     list_payment_intents,
@@ -57,6 +59,35 @@ def create_payment_intent_endpoint(
                 "A payment intent with this external reference "
                 "already exists for this merchant."
             ),
+        ) from exc
+
+
+@router.post(
+    "/{payment_intent_id}/confirm",
+    response_model=PaymentIntentRead,
+)
+def confirm_payment_intent_endpoint(
+    payment_intent_id: uuid.UUID,
+    credential: AuthenticatedCredential,
+    session: DatabaseSession,
+) -> PaymentIntent:
+    """Confirm an eligible payment intent for the authenticated merchant."""
+
+    try:
+        return confirm_payment_intent(
+            session=session,
+            merchant_id=credential.merchant_id,
+            payment_intent_id=payment_intent_id,
+        )
+    except PaymentIntentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment intent not found.",
+        ) from exc
+    except PaymentIntentInvalidStateError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
         ) from exc
 
 

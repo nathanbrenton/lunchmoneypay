@@ -41,3 +41,16 @@ class PaymentIntentAlreadyExistsError(Exception):
 
 class PaymentIntentNotFoundError(Exception):
     """Raised when a payment intent cannot be found for a merchant."""
+
+
+class PaymentIntentInvalidStateError(Exception):
+    """Raised when a payment intent cannot perform the requested transition."""
+
+    def __init__(self, current_status: str) -> None:
+        """Store the state that blocked the transition."""
+
+        self.current_status = current_status
+
+        super().__init__(
+            f"Payment intent cannot be confirmed from status: {current_status}."
+        )
