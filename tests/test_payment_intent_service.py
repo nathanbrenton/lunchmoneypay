@@ -400,3 +400,71 @@ def test_cancel_payment_intent_rejects_invalid_status() -> None:
 
     session.commit.assert_not_called()
     session.refresh.assert_not_called()
+
+
+def test_confirm_payment_intent_records_controlled_decline() -> None:
+    """Record a deterministic mock decline without ending the payment intent."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        external_reference="homesteady-payment-decline",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        last_error_code=None,
+    )
+
+    session.get.return_value = payment_intent
+
+    result = confirm_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert result is payment_intent
+    assert payment_intent.status == "requires_payment_method"
+    assert payment_intent.last_error_code == "card_declined"
+
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(payment_intent)
+
+
+def test_confirm_payment_intent_clears_previous_error_on_success() -> None:
+    """Clear the last processing error when a retry succeeds."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        external_reference="homesteady-payment-retry",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        last_error_code="card_declined",
+    )
+
+    session.get.return_value = payment_intent
+
+    result = confirm_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert result is payment_intent
+    assert payment_intent.status == "succeeded"
+    assert payment_intent.last_error_code is None
+
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(payment_intent)

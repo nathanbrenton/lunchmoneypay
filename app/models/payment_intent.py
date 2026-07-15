@@ -82,6 +82,11 @@ class PaymentIntent(Base):
         nullable=False,
     )
 
+    last_error_code: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

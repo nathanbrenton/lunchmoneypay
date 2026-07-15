@@ -44,5 +44,6 @@ class PaymentIntentRead(BaseModel):
     amount_minor: int
     currency: str
     status: str
+    last_error_code: str | None = None
     created_at: datetime
     updated_at: datetime

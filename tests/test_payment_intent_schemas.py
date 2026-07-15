@@ -84,3 +84,28 @@ def test_payment_intent_read_accepts_expected_fields() -> None:
     assert payment_intent.merchant_id == merchant_id
     assert payment_intent.customer_id == customer_id
     assert payment_intent.status == "requires_payment_method"
+
+
+def test_payment_intent_read_accepts_optional_last_error_code() -> None:
+    """Represent the latest mock processing error in API responses."""
+
+    from datetime import UTC, datetime
+
+    from app.schemas.payment_intent import PaymentIntentRead
+
+    timestamp = datetime.now(UTC)
+
+    payment_intent = PaymentIntentRead(
+        id=uuid.uuid4(),
+        merchant_id=uuid.uuid4(),
+        customer_id=uuid.uuid4(),
+        external_reference="homesteady-payment-123",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        last_error_code="card_declined",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    assert payment_intent.last_error_code == "card_declined"

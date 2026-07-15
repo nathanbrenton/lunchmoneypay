@@ -141,3 +141,12 @@ def test_payment_intent_has_database_defaults() -> None:
     assert status.server_default is not None
     assert created_at.server_default is not None
     assert updated_at.server_default is not None
+
+
+def test_payment_intent_allows_optional_last_error_code() -> None:
+    """Store the latest mock processing error without ending the intent."""
+
+    column = PaymentIntent.__table__.columns["last_error_code"]
+
+    assert column.nullable is True
+    assert column.type.length == 50

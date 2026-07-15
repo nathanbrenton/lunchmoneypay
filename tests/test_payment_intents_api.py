@@ -419,6 +419,7 @@ def test_list_payment_intents_returns_serialized_records(
             "amount_minor": 2500,
             "currency": "USD",
             "status": "requires_payment_method",
+            "last_error_code": None,
             "created_at": timestamp.isoformat().replace("+00:00", "Z"),
             "updated_at": timestamp.isoformat().replace("+00:00", "Z"),
         },
@@ -749,3 +750,55 @@ def test_cancel_payment_intent_returns_conflict_for_invalid_state(
     assert response.json() == {
         "detail": ("Payment intent cannot be canceled from status: succeeded."),
     }
+
+
+def test_confirm_payment_intent_returns_controlled_decline(
+    monkeypatch,
+) -> None:
+    """Return a retryable payment intent with its latest decline code."""
+
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    timestamp = datetime.now(UTC)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        external_reference="homesteady-payment-decline",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        last_error_code="card_declined",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    monkeypatch.setattr(
+        payment_intents,
+        "confirm_payment_intent",
+        lambda session, merchant_id, payment_intent_id: payment_intent,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-intents/{payment_intent_id}/confirm",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "requires_payment_method"
+    assert response.json()["last_error_code"] == "card_declined"

@@ -113,7 +113,11 @@ def confirm_payment_intent(
             payment_intent.status,
         )
 
-    payment_intent.status = "succeeded"
+    if payment_intent.external_reference.endswith("-decline"):
+        payment_intent.last_error_code = "card_declined"
+    else:
+        payment_intent.status = "succeeded"
+        payment_intent.last_error_code = None
 
     session.commit()
     session.refresh(payment_intent)
