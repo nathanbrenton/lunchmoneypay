@@ -15,3 +15,7 @@ class InvalidApiKeyError(Exception):
 
 class InactiveApiCredentialError(Exception):
     """Raised when an API credential is revoked or expired."""
+
+
+class CustomerAlreadyExistsError(Exception):
+    """Raised when a merchant reuses a customer external reference."""
