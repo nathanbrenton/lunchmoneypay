@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
 from app.models.payment_intent import PaymentIntent
-from app.schemas.payment_intent import PaymentIntentCreate
+from app.schemas.payment_intent import PaymentIntentConfirm, PaymentIntentCreate
 from app.services.exceptions import (
     CustomerNotFoundError,
     PaymentIntentAlreadyExistsError,
@@ -98,6 +98,7 @@ def confirm_payment_intent(
     session: Session,
     merchant_id: uuid.UUID,
     payment_intent_id: uuid.UUID,
+    payment_intent_confirm: PaymentIntentConfirm,
 ) -> PaymentIntent:
     """Confirm an eligible mock payment intent successfully."""
 
@@ -113,7 +114,7 @@ def confirm_payment_intent(
             payment_intent.status,
         )
 
-    if payment_intent.external_reference.endswith("-decline"):
+    if payment_intent_confirm.test_scenario == "card_declined":
         payment_intent.last_error_code = "card_declined"
     else:
         payment_intent.status = "succeeded"

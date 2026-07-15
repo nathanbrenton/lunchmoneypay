@@ -462,9 +462,11 @@ def test_confirm_payment_intent_uses_authenticated_merchant(
         session,
         merchant_id,
         payment_intent_id,
+        payment_intent_confirm,
     ):
         received_arguments["merchant_id"] = merchant_id
         received_arguments["payment_intent_id"] = payment_intent_id
+        received_arguments["test_scenario"] = payment_intent_confirm.test_scenario
         return payment_intent
 
     monkeypatch.setattr(
@@ -491,6 +493,7 @@ def test_confirm_payment_intent_uses_authenticated_merchant(
     assert received_arguments == {
         "merchant_id": merchant_id,
         "payment_intent_id": payment_intent_id,
+        "test_scenario": "success",
     }
 
 
@@ -514,6 +517,7 @@ def test_confirm_payment_intent_returns_not_found(
         session,
         merchant_id,
         payment_intent_id,
+        payment_intent_confirm,
     ):
         raise payment_intents.PaymentIntentNotFoundError(
             payment_intent_id,
@@ -561,6 +565,7 @@ def test_confirm_payment_intent_returns_conflict_for_invalid_state(
         session,
         merchant_id,
         payment_intent_id,
+        payment_intent_confirm,
     ):
         raise payment_intents.PaymentIntentInvalidStateError(
             "confirmed",
@@ -786,7 +791,9 @@ def test_confirm_payment_intent_returns_controlled_decline(
     monkeypatch.setattr(
         payment_intents,
         "confirm_payment_intent",
-        lambda session, merchant_id, payment_intent_id: payment_intent,
+        lambda session, merchant_id, payment_intent_id, payment_intent_confirm: (
+            payment_intent
+        ),
     )
 
     app.dependency_overrides[get_db_session] = override_get_db_session
@@ -795,6 +802,7 @@ def test_confirm_payment_intent_returns_controlled_decline(
     try:
         response = client.post(
             f"/api/v1/payment-intents/{payment_intent_id}/confirm",
+            json={"test_scenario": "card_declined"},
         )
     finally:
         app.dependency_overrides.clear()

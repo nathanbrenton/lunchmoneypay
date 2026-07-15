@@ -1,12 +1,14 @@
 """Payment-intent API endpoints."""
 
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Body, HTTPException, status
 
 from app.api.dependencies import AuthenticatedCredential, DatabaseSession
 from app.models.payment_intent import PaymentIntent
 from app.schemas.payment_intent import (
+    PaymentIntentConfirm,
     PaymentIntentCreate,
     PaymentIntentRead,
 )
@@ -100,14 +102,22 @@ def confirm_payment_intent_endpoint(
     payment_intent_id: uuid.UUID,
     credential: AuthenticatedCredential,
     session: DatabaseSession,
+    payment_intent_confirm: Annotated[
+        PaymentIntentConfirm | None,
+        Body(),
+    ] = None,
 ) -> PaymentIntent:
     """Confirm an eligible payment intent for the authenticated merchant."""
+
+    # An omitted body uses the normal successful mock scenario.
+    confirmation = payment_intent_confirm or PaymentIntentConfirm()
 
     try:
         return confirm_payment_intent(
             session=session,
             merchant_id=credential.merchant_id,
             payment_intent_id=payment_intent_id,
+            payment_intent_confirm=confirmation,
         )
     except PaymentIntentNotFoundError as exc:
         raise HTTPException(

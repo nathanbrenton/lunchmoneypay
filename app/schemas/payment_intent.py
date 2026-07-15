@@ -47,3 +47,13 @@ class PaymentIntentRead(BaseModel):
     last_error_code: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class PaymentIntentConfirm(BaseModel):
+    """Request body for confirming a mock payment intent."""
+
+    test_scenario: str = Field(
+        default="success",
+        pattern="^(success|card_declined)$",
+        examples=["success"],
+    )

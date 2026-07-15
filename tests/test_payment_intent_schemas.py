@@ -109,3 +109,40 @@ def test_payment_intent_read_accepts_optional_last_error_code() -> None:
     )
 
     assert payment_intent.last_error_code == "card_declined"
+
+
+def test_payment_intent_confirm_accepts_supported_scenarios() -> None:
+    """Accept explicit mock processing scenarios."""
+
+    from app.schemas.payment_intent import PaymentIntentConfirm
+
+    success = PaymentIntentConfirm(
+        test_scenario="success",
+    )
+    decline = PaymentIntentConfirm(
+        test_scenario="card_declined",
+    )
+
+    assert success.test_scenario == "success"
+    assert decline.test_scenario == "card_declined"
+
+
+def test_payment_intent_confirm_defaults_to_success() -> None:
+    """Default confirmation to the successful mock scenario."""
+
+    from app.schemas.payment_intent import PaymentIntentConfirm
+
+    confirmation = PaymentIntentConfirm()
+
+    assert confirmation.test_scenario == "success"
+
+
+def test_payment_intent_confirm_rejects_unknown_scenario() -> None:
+    """Reject unsupported mock processing scenarios."""
+
+    from app.schemas.payment_intent import PaymentIntentConfirm
+
+    with pytest.raises(ValidationError):
+        PaymentIntentConfirm(
+            test_scenario="insufficient_funds",
+        )

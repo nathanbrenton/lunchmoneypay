@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
 from app.models.payment_intent import PaymentIntent
-from app.schemas.payment_intent import PaymentIntentCreate
+from app.schemas.payment_intent import (
+    PaymentIntentConfirm,
+    PaymentIntentCreate,
+)
 from app.services.payment_intent import (
     cancel_payment_intent,
     confirm_payment_intent,
@@ -285,6 +288,9 @@ def test_confirm_payment_intent_marks_payment_as_succeeded() -> None:
         session=session,
         merchant_id=merchant_id,
         payment_intent_id=payment_intent_id,
+        payment_intent_confirm=PaymentIntentConfirm(
+            test_scenario="success",
+        ),
     )
 
     assert result is payment_intent
@@ -326,6 +332,9 @@ def test_confirm_payment_intent_rejects_invalid_status() -> None:
             session=session,
             merchant_id=merchant_id,
             payment_intent_id=payment_intent_id,
+            payment_intent_confirm=PaymentIntentConfirm(
+                test_scenario="success",
+            ),
         )
 
     session.commit.assert_not_called()
@@ -426,6 +435,9 @@ def test_confirm_payment_intent_records_controlled_decline() -> None:
         session=session,
         merchant_id=merchant_id,
         payment_intent_id=payment_intent_id,
+        payment_intent_confirm=PaymentIntentConfirm(
+            test_scenario="card_declined",
+        ),
     )
 
     assert result is payment_intent
@@ -460,6 +472,9 @@ def test_confirm_payment_intent_clears_previous_error_on_success() -> None:
         session=session,
         merchant_id=merchant_id,
         payment_intent_id=payment_intent_id,
+        payment_intent_confirm=PaymentIntentConfirm(
+            test_scenario="success",
+        ),
     )
 
     assert result is payment_intent
@@ -468,3 +483,39 @@ def test_confirm_payment_intent_clears_previous_error_on_success() -> None:
 
     session.commit.assert_called_once_with()
     session.refresh.assert_called_once_with(payment_intent)
+
+
+def test_confirm_payment_intent_uses_explicit_decline_scenario() -> None:
+    """Use the confirmation request to trigger a controlled decline."""
+
+    from app.schemas.payment_intent import PaymentIntentConfirm
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        external_reference="ordinary-payment-reference",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        last_error_code=None,
+    )
+
+    session.get.return_value = payment_intent
+
+    result = confirm_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+        payment_intent_confirm=PaymentIntentConfirm(
+            test_scenario="card_declined",
+        ),
+    )
+
+    assert result is payment_intent
+    assert payment_intent.status == "requires_payment_method"
+    assert payment_intent.last_error_code == "card_declined"
