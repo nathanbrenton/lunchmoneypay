@@ -4,6 +4,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from app.api import dependencies
 from app.api.dependencies import get_authenticated_credential
 from app.main import app
 from app.models.merchant_api_credential import MerchantApiCredential
@@ -37,4 +38,38 @@ def test_whoami_returns_authenticated_context() -> None:
         "merchant_id": str(merchant_id),
         "credential_id": str(credential_id),
         "key_prefix": "lmp_test_a1b2c3d4e5f6",
+    }
+
+
+def test_whoami_rejects_missing_api_key() -> None:
+    response = client.get("/api/v1/auth/whoami")
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "API key is required.",
+    }
+
+
+def test_whoami_rejects_invalid_api_key(
+    monkeypatch,
+) -> None:
+    def raise_invalid(session, api_key, pepper):
+        raise dependencies.InvalidApiKeyError("Invalid API key.")
+
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_key",
+        raise_invalid,
+    )
+
+    response = client.get(
+        "/api/v1/auth/whoami",
+        headers={
+            "X-API-Key": "lmp_test_invalid.example-secret",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "Invalid API key.",
     }
