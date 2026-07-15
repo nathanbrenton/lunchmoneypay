@@ -19,3 +19,7 @@ class InactiveApiCredentialError(Exception):
 
 class CustomerAlreadyExistsError(Exception):
     """Raised when a merchant reuses a customer external reference."""
+
+
+class CustomerNotFoundError(Exception):
+    """Raised when a customer cannot be found for a merchant."""

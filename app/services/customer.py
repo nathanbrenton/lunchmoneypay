@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
 from app.schemas.customer import CustomerCreate
-from app.services.exceptions import CustomerAlreadyExistsError
+from app.services.exceptions import (
+    CustomerAlreadyExistsError,
+    CustomerNotFoundError,
+)
 
 
 def create_customer(
@@ -39,5 +42,20 @@ def create_customer(
         ) from exc
 
     session.refresh(customer)
+
+    return customer
+
+
+def get_customer(
+    session: Session,
+    merchant_id: uuid.UUID,
+    customer_id: uuid.UUID,
+) -> Customer:
+    """Return a customer owned by the specified merchant."""
+
+    customer = session.get(Customer, customer_id)
+
+    if customer is None or customer.merchant_id != merchant_id:
+        raise CustomerNotFoundError(customer_id)
 
     return customer
