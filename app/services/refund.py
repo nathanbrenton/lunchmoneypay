@@ -16,6 +16,7 @@ from app.services.exceptions import (
 )
 from app.services.payment_event import create_refund_event
 from app.services.payment_intent import get_payment_intent
+from app.services.webhook import dispatch_payment_event_safely
 
 
 def create_refund(
@@ -67,7 +68,7 @@ def create_refund(
     session.add(refund)
     session.flush()
 
-    create_refund_event(
+    payment_event = create_refund_event(
         session=session,
         refund=refund,
         payment_intent=payment_intent,
@@ -83,6 +84,12 @@ def create_refund(
         ) from exc
 
     session.refresh(refund)
+
+    if payment_event is not None:
+        dispatch_payment_event_safely(
+            session=session,
+            payment_event=payment_event,
+        )
 
     return refund
 

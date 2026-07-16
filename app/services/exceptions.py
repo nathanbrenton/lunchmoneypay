@@ -103,3 +103,11 @@ class WebhookEndpointAlreadyExistsError(Exception):
 
 class WebhookEndpointNotFoundError(Exception):
     """Raised when a webhook endpoint is not accessible to a merchant."""
+
+
+class WebhookDeliveryNotFoundError(Exception):
+    """Raised when a webhook delivery is inaccessible to a merchant."""
+
+
+class WebhookDeliveryNotRetryableError(Exception):
+    """Raised when a webhook delivery cannot be retried."""

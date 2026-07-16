@@ -17,6 +17,8 @@ from app.models.webhook_delivery import WebhookDelivery
 from app.models.webhook_endpoint import WebhookEndpoint
 from app.schemas.webhook import WebhookEndpointCreate
 from app.services.exceptions import (
+    WebhookDeliveryNotFoundError,
+    WebhookDeliveryNotRetryableError,
     WebhookEndpointAlreadyExistsError,
     WebhookEndpointNotFoundError,
 )
@@ -127,6 +129,91 @@ def serialize_payment_event(payment_event: PaymentEvent) -> bytes:
     ).encode()
 
 
+def _deliver_to_endpoint(
+    session: Session,
+    payment_event: PaymentEvent,
+    endpoint: WebhookEndpoint,
+    *,
+    timeout_seconds: float,
+) -> WebhookDelivery:
+    """Attempt one signed delivery and add its result to the session."""
+
+    payload_body = serialize_payment_event(payment_event)
+    timestamp = int(time.time())
+    signature = create_webhook_signature(
+        endpoint.signing_secret,
+        timestamp,
+        payload_body,
+    )
+    request = Request(
+        endpoint.url,
+        data=payload_body,
+        headers={
+            "Content-Type": "application/json",
+            "LunchMoneyPay-Event-Id": str(payment_event.id),
+            "LunchMoneyPay-Signature": signature,
+        },
+        method="POST",
+    )
+
+    response_status = None
+    error_message = None
+
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            response_status = response.status
+            delivery_status = "succeeded" if 200 <= response.status < 300 else "failed"
+    except HTTPError as exc:
+        response_status = exc.code
+        delivery_status = "failed"
+        error_message = str(exc)[:500]
+    except (URLError, TimeoutError, OSError) as exc:
+        delivery_status = "failed"
+        error_message = str(exc)[:500]
+
+    delivery = WebhookDelivery(
+        merchant_id=payment_event.merchant_id,
+        webhook_endpoint_id=endpoint.id,
+        payment_event_id=payment_event.id,
+        status=delivery_status,
+        response_status=response_status,
+        error_message=error_message,
+    )
+    session.add(delivery)
+    return delivery
+
+
+def deliver_payment_event_record(
+    session: Session,
+    payment_event: PaymentEvent,
+    *,
+    timeout_seconds: float = 5.0,
+) -> list[WebhookDelivery]:
+    """Deliver a loaded event to all active merchant endpoints."""
+
+    statement = select(WebhookEndpoint).where(
+        WebhookEndpoint.merchant_id == payment_event.merchant_id,
+        WebhookEndpoint.status == "active",
+    )
+    endpoints = list(session.scalars(statement).all())
+    deliveries = [
+        _deliver_to_endpoint(
+            session=session,
+            payment_event=payment_event,
+            endpoint=endpoint,
+            timeout_seconds=timeout_seconds,
+        )
+        for endpoint in endpoints
+    ]
+
+    if deliveries:
+        session.commit()
+        for delivery in deliveries:
+            session.refresh(delivery)
+
+    return deliveries
+
+
 def deliver_payment_event(
     session: Session,
     merchant_id: uuid.UUID,
@@ -141,66 +228,85 @@ def deliver_payment_event(
         merchant_id=merchant_id,
         payment_event_id=payment_event_id,
     )
-    statement = select(WebhookEndpoint).where(
-        WebhookEndpoint.merchant_id == merchant_id,
-        WebhookEndpoint.status == "active",
+    return deliver_payment_event_record(
+        session=session,
+        payment_event=payment_event,
+        timeout_seconds=timeout_seconds,
     )
-    endpoints = list(session.scalars(statement).all())
-    payload_body = serialize_payment_event(payment_event)
-    timestamp = int(time.time())
-    deliveries: list[WebhookDelivery] = []
 
-    for endpoint in endpoints:
-        signature = create_webhook_signature(
-            endpoint.signing_secret,
-            timestamp,
-            payload_body,
+
+def dispatch_payment_event_safely(
+    session: Session,
+    payment_event: PaymentEvent,
+) -> list[WebhookDelivery]:
+    """Dispatch after commit without failing the lifecycle operation."""
+
+    try:
+        return deliver_payment_event_record(
+            session=session,
+            payment_event=payment_event,
         )
-        request = Request(
-            endpoint.url,
-            data=payload_body,
-            headers={
-                "Content-Type": "application/json",
-                "LunchMoneyPay-Event-Id": str(payment_event.id),
-                "LunchMoneyPay-Signature": signature,
-            },
-            method="POST",
-        )
+    except Exception:
+        session.rollback()
+        return []
 
-        response_status = None
-        error_message = None
 
-        try:
-            with urlopen(request, timeout=timeout_seconds) as response:
-                response_status = response.status
-                delivery_status = (
-                    "succeeded" if 200 <= response.status < 300 else "failed"
-                )
-        except HTTPError as exc:
-            response_status = exc.code
-            delivery_status = "failed"
-            error_message = str(exc)[:500]
-        except (URLError, TimeoutError, OSError) as exc:
-            delivery_status = "failed"
-            error_message = str(exc)[:500]
+def get_webhook_delivery(
+    session: Session,
+    merchant_id: uuid.UUID,
+    webhook_delivery_id: uuid.UUID,
+) -> WebhookDelivery:
+    """Return a delivery attempt owned by the merchant."""
 
-        delivery = WebhookDelivery(
-            merchant_id=merchant_id,
-            webhook_endpoint_id=endpoint.id,
-            payment_event_id=payment_event.id,
-            status=delivery_status,
-            response_status=response_status,
-            error_message=error_message,
-        )
-        session.add(delivery)
-        deliveries.append(delivery)
+    delivery = session.get(WebhookDelivery, webhook_delivery_id)
 
-    if deliveries:
-        session.commit()
-        for delivery in deliveries:
-            session.refresh(delivery)
+    if delivery is None or delivery.merchant_id != merchant_id:
+        raise WebhookDeliveryNotFoundError(webhook_delivery_id)
 
-    return deliveries
+    return delivery
+
+
+def retry_webhook_delivery(
+    session: Session,
+    merchant_id: uuid.UUID,
+    webhook_delivery_id: uuid.UUID,
+    *,
+    timeout_seconds: float = 5.0,
+) -> WebhookDelivery:
+    """Retry one failed delivery as a new persisted attempt."""
+
+    previous_delivery = get_webhook_delivery(
+        session=session,
+        merchant_id=merchant_id,
+        webhook_delivery_id=webhook_delivery_id,
+    )
+
+    if previous_delivery.status != "failed":
+        raise WebhookDeliveryNotRetryableError(webhook_delivery_id)
+
+    endpoint = get_webhook_endpoint(
+        session=session,
+        merchant_id=merchant_id,
+        webhook_endpoint_id=previous_delivery.webhook_endpoint_id,
+    )
+
+    if endpoint.status != "active":
+        raise WebhookDeliveryNotRetryableError(webhook_delivery_id)
+
+    payment_event = get_payment_event(
+        session=session,
+        merchant_id=merchant_id,
+        payment_event_id=previous_delivery.payment_event_id,
+    )
+    delivery = _deliver_to_endpoint(
+        session=session,
+        payment_event=payment_event,
+        endpoint=endpoint,
+        timeout_seconds=timeout_seconds,
+    )
+    session.commit()
+    session.refresh(delivery)
+    return delivery
 
 
 def list_webhook_deliveries(

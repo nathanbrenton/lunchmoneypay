@@ -9,6 +9,7 @@ import app.api.v1.webhooks as webhooks
 from app.api.dependencies import get_authenticated_credential, get_db_session
 from app.main import app
 from app.models.merchant_api_credential import MerchantApiCredential
+from app.models.webhook_delivery import WebhookDelivery
 from app.models.webhook_endpoint import WebhookEndpoint
 
 client = TestClient(app)
@@ -110,4 +111,56 @@ def test_dispatch_endpoint_forwards_authenticated_merchant(
     assert received_arguments == {
         "merchant_id": merchant_id,
         "payment_event_id": event_id,
+    }
+
+
+def test_retry_webhook_delivery_forwards_authenticated_merchant(
+    monkeypatch,
+) -> None:
+    """Retry a failed delivery within the merchant boundary."""
+
+    merchant_id = uuid.uuid4()
+    delivery_id = uuid.uuid4()
+    credential = build_credential(merchant_id)
+    received_arguments = {}
+    timestamp = datetime.now(UTC)
+    delivery = WebhookDelivery(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        webhook_endpoint_id=uuid.uuid4(),
+        payment_event_id=uuid.uuid4(),
+        status="succeeded",
+        response_status=204,
+        attempted_at=timestamp,
+    )
+
+    def fake_retry_webhook_delivery(
+        session,
+        merchant_id,
+        webhook_delivery_id,
+    ):
+        received_arguments["merchant_id"] = merchant_id
+        received_arguments["webhook_delivery_id"] = webhook_delivery_id
+        return delivery
+
+    monkeypatch.setattr(
+        webhooks,
+        "retry_webhook_delivery",
+        fake_retry_webhook_delivery,
+    )
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/webhook-deliveries/{delivery_id}/retry",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "succeeded"
+    assert received_arguments == {
+        "merchant_id": merchant_id,
+        "webhook_delivery_id": delivery_id,
     }

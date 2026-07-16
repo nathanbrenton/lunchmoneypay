@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 import app.services.refund as refund_service
+from app.models.payment_event import PaymentEvent
 from app.models.payment_intent import PaymentIntent
 from app.models.refund import Refund
 from app.schemas.refund import RefundCreate
@@ -298,3 +299,58 @@ def test_create_refund_flushes_before_creating_event(
     )
 
     assert call_order == ["flush", "event"]
+
+
+def test_create_refund_dispatches_created_event(
+    monkeypatch,
+) -> None:
+    """Automatically dispatch the refund event after commit."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_intent = build_succeeded_payment_intent(
+        merchant_id,
+        payment_intent_id,
+    )
+    payment_event = PaymentEvent(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+        event_type="refund.succeeded",
+        payload={"status": "succeeded"},
+    )
+    dispatched = {}
+
+    monkeypatch.setattr(
+        refund_service,
+        "get_payment_intent",
+        lambda **kwargs: payment_intent,
+    )
+    monkeypatch.setattr(
+        refund_service,
+        "create_refund_event",
+        lambda **kwargs: payment_event,
+    )
+    session.scalar.return_value = 0
+
+    def fake_dispatch_payment_event_safely(session, payment_event):
+        dispatched["payment_event"] = payment_event
+
+    monkeypatch.setattr(
+        refund_service,
+        "dispatch_payment_event_safely",
+        fake_dispatch_payment_event_safely,
+    )
+
+    refund_service.create_refund(
+        session=session,
+        merchant_id=merchant_id,
+        refund_create=RefundCreate(
+            payment_intent_id=payment_intent_id,
+            external_reference="auto-dispatch-refund",
+            amount_minor=500,
+        ),
+    )
+
+    assert dispatched == {"payment_event": payment_event}

@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
+from app.models.payment_event import PaymentEvent
 from app.models.payment_intent import PaymentIntent
 from app.models.payment_method import PaymentMethod
 from app.schemas.payment_intent import (
@@ -1115,3 +1116,119 @@ def test_cancel_payment_intent_records_canceled_event(
         "payment_intent": payment_intent,
         "event_type": "payment_intent.canceled",
     }
+
+
+def test_confirm_payment_intent_dispatches_created_event(
+    monkeypatch,
+) -> None:
+    """Automatically dispatch the event after payment confirmation commits."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        payment_method_id=payment_method_id,
+        external_reference="auto-dispatch-confirm",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=payment_intent.customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="success",
+    )
+    payment_event = PaymentEvent(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+        event_type="payment_intent.succeeded",
+        payload={"status": "succeeded"},
+    )
+    session.get.side_effect = [payment_intent, payment_method]
+    dispatched = {}
+
+    monkeypatch.setattr(
+        payment_intent_service,
+        "create_payment_event",
+        lambda **kwargs: payment_event,
+    )
+
+    def fake_dispatch_payment_event_safely(session, payment_event):
+        dispatched["payment_event"] = payment_event
+
+    monkeypatch.setattr(
+        payment_intent_service,
+        "dispatch_payment_event_safely",
+        fake_dispatch_payment_event_safely,
+    )
+
+    payment_intent_service.confirm_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert dispatched == {"payment_event": payment_event}
+
+
+def test_cancel_payment_intent_dispatches_created_event(
+    monkeypatch,
+) -> None:
+    """Automatically dispatch the event after cancellation commits."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        external_reference="auto-dispatch-cancel",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+    payment_event = PaymentEvent(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+        event_type="payment_intent.canceled",
+        payload={"status": "canceled"},
+    )
+    session.get.return_value = payment_intent
+    dispatched = {}
+
+    monkeypatch.setattr(
+        payment_intent_service,
+        "create_payment_event",
+        lambda **kwargs: payment_event,
+    )
+
+    def fake_dispatch_payment_event_safely(session, payment_event):
+        dispatched["payment_event"] = payment_event
+
+    monkeypatch.setattr(
+        payment_intent_service,
+        "dispatch_payment_event_safely",
+        fake_dispatch_payment_event_safely,
+    )
+
+    payment_intent_service.cancel_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert dispatched == {"payment_event": payment_event}

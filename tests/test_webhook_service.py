@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 import app.services.webhook as webhook_service
 from app.models.payment_event import PaymentEvent
+from app.models.webhook_delivery import WebhookDelivery
 from app.models.webhook_endpoint import WebhookEndpoint
 
 
@@ -174,3 +175,106 @@ def test_deliver_payment_event_returns_empty_without_active_endpoints(
 
     assert result == []
     session.commit.assert_not_called()
+
+
+def test_dispatch_payment_event_safely_isolates_delivery_failure(
+    monkeypatch,
+) -> None:
+    """Do not fail a committed lifecycle operation when dispatch crashes."""
+
+    session = MagicMock(spec=Session)
+    payment_event = PaymentEvent(
+        id=uuid.uuid4(),
+        merchant_id=uuid.uuid4(),
+        payment_intent_id=uuid.uuid4(),
+        event_type="payment_intent.succeeded",
+        payload={"status": "succeeded"},
+        created_at=datetime.now(UTC),
+    )
+
+    def raise_delivery_error(**kwargs):
+        raise RuntimeError("delivery persistence failed")
+
+    monkeypatch.setattr(
+        webhook_service,
+        "deliver_payment_event_record",
+        raise_delivery_error,
+    )
+
+    result = webhook_service.dispatch_payment_event_safely(
+        session=session,
+        payment_event=payment_event,
+    )
+
+    assert result == []
+    session.rollback.assert_called_once_with()
+
+
+def test_retry_webhook_delivery_creates_new_attempt(
+    monkeypatch,
+) -> None:
+    """Retry a failed attempt against its original endpoint and event."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    endpoint = WebhookEndpoint(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        url="https://example.test/webhooks",
+        signing_secret="a" * 32,
+        status="active",
+    )
+    payment_event = PaymentEvent(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        payment_intent_id=uuid.uuid4(),
+        event_type="payment_intent.succeeded",
+        payload={"status": "succeeded"},
+        created_at=datetime.now(UTC),
+    )
+    previous_delivery = WebhookDelivery(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        webhook_endpoint_id=endpoint.id,
+        payment_event_id=payment_event.id,
+        status="failed",
+    )
+    retried_delivery = WebhookDelivery(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        webhook_endpoint_id=endpoint.id,
+        payment_event_id=payment_event.id,
+        status="succeeded",
+        response_status=204,
+    )
+
+    monkeypatch.setattr(
+        webhook_service,
+        "get_webhook_delivery",
+        lambda **kwargs: previous_delivery,
+    )
+    monkeypatch.setattr(
+        webhook_service,
+        "get_webhook_endpoint",
+        lambda **kwargs: endpoint,
+    )
+    monkeypatch.setattr(
+        webhook_service,
+        "get_payment_event",
+        lambda **kwargs: payment_event,
+    )
+    monkeypatch.setattr(
+        webhook_service,
+        "_deliver_to_endpoint",
+        lambda **kwargs: retried_delivery,
+    )
+
+    result = webhook_service.retry_webhook_delivery(
+        session=session,
+        merchant_id=merchant_id,
+        webhook_delivery_id=previous_delivery.id,
+    )
+
+    assert result is retried_delivery
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(retried_delivery)

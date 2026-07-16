@@ -20,6 +20,7 @@ from app.services.exceptions import (
 )
 from app.services.payment_event import create_payment_event
 from app.services.payment_method import get_payment_method
+from app.services.webhook import dispatch_payment_event_safely
 
 
 def create_payment_intent(
@@ -143,7 +144,7 @@ def confirm_payment_intent(
     else:
         event_type = "payment_intent.payment_failed"
 
-    create_payment_event(
+    payment_event = create_payment_event(
         session=session,
         payment_intent=payment_intent,
         event_type=event_type,
@@ -151,6 +152,12 @@ def confirm_payment_intent(
 
     session.commit()
     session.refresh(payment_intent)
+
+    if payment_event is not None:
+        dispatch_payment_event_safely(
+            session=session,
+            payment_event=payment_event,
+        )
 
     return payment_intent
 
@@ -176,7 +183,7 @@ def cancel_payment_intent(
 
     payment_intent.status = "canceled"
 
-    create_payment_event(
+    payment_event = create_payment_event(
         session=session,
         payment_intent=payment_intent,
         event_type="payment_intent.canceled",
@@ -184,6 +191,12 @@ def cancel_payment_intent(
 
     session.commit()
     session.refresh(payment_intent)
+
+    if payment_event is not None:
+        dispatch_payment_event_safely(
+            session=session,
+            payment_event=payment_event,
+        )
 
     return payment_intent
 

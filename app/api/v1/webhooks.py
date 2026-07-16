@@ -14,6 +14,8 @@ from app.schemas.webhook import (
 )
 from app.services.exceptions import (
     PaymentEventNotFoundError,
+    WebhookDeliveryNotFoundError,
+    WebhookDeliveryNotRetryableError,
     WebhookEndpointAlreadyExistsError,
     WebhookEndpointNotFoundError,
 )
@@ -24,6 +26,7 @@ from app.services.webhook import (
     get_webhook_endpoint,
     list_webhook_deliveries,
     list_webhook_endpoints,
+    retry_webhook_delivery,
 )
 
 router = APIRouter(prefix="/webhook-endpoints", tags=["webhooks"])
@@ -152,3 +155,32 @@ def list_webhook_deliveries_endpoint(
         merchant_id=credential.merchant_id,
         payment_event_id=payment_event_id,
     )
+
+
+@delivery_router.post(
+    "/{webhook_delivery_id}/retry",
+    response_model=WebhookDeliveryRead,
+)
+def retry_webhook_delivery_endpoint(
+    webhook_delivery_id: uuid.UUID,
+    credential: AuthenticatedCredential,
+    session: DatabaseSession,
+) -> WebhookDelivery:
+    """Retry a failed webhook-delivery attempt."""
+
+    try:
+        return retry_webhook_delivery(
+            session=session,
+            merchant_id=credential.merchant_id,
+            webhook_delivery_id=webhook_delivery_id,
+        )
+    except WebhookDeliveryNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webhook delivery not found.",
+        ) from exc
+    except WebhookDeliveryNotRetryableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Webhook delivery cannot be retried.",
+        ) from exc
