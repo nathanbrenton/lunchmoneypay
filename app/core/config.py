@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     """Runtime settings for LunchMoneyPay."""
 
     app_name: str = "LunchMoneyPay"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     app_environment: str = "development"
     api_v1_prefix: str = "/api/v1"
     api_key_pepper: str = "development-only-change-me"
