@@ -50,10 +50,12 @@ def get_payment_event_endpoint(
 def list_payment_events_endpoint(
     credential: AuthenticatedCredential,
     session: DatabaseSession,
+    payment_intent_id: uuid.UUID | None = None,
 ) -> list[PaymentEvent]:
     """List payment events owned by the authenticated merchant."""
 
     return list_payment_events(
         session=session,
         merchant_id=credential.merchant_id,
+        payment_intent_id=payment_intent_id,
     )

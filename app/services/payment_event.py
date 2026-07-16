@@ -58,13 +58,21 @@ def get_payment_event(
 def list_payment_events(
     session: Session,
     merchant_id: uuid.UUID,
+    payment_intent_id: uuid.UUID | None = None,
 ) -> list[PaymentEvent]:
     """List a merchant's payment events, newest first."""
 
-    statement = (
-        select(PaymentEvent)
-        .where(PaymentEvent.merchant_id == merchant_id)
-        .order_by(PaymentEvent.created_at.desc())
+    statement = select(PaymentEvent).where(
+        PaymentEvent.merchant_id == merchant_id,
+    )
+
+    if payment_intent_id is not None:
+        statement = statement.where(
+            PaymentEvent.payment_intent_id == payment_intent_id,
+        )
+
+    statement = statement.order_by(
+        PaymentEvent.created_at.desc(),
     )
 
     return list(session.scalars(statement).all())

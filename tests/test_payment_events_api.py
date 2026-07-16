@@ -165,8 +165,10 @@ def test_list_payment_events_uses_authenticated_merchant_and_returns_empty_list(
     def fake_list_payment_events(
         session,
         merchant_id,
+        payment_intent_id=None,
     ):
         received_merchant_ids.append(merchant_id)
+        assert payment_intent_id is None
         return []
 
     monkeypatch.setattr(
@@ -222,7 +224,7 @@ def test_list_payment_events_returns_serialized_records(
     monkeypatch.setattr(
         payment_events,
         "list_payment_events",
-        lambda session, merchant_id: [payment_event],
+        lambda session, merchant_id, payment_intent_id=None: [payment_event],
     )
 
     app.dependency_overrides[get_db_session] = override_get_db_session
@@ -248,3 +250,57 @@ def test_list_payment_events_returns_serialized_records(
             "created_at": timestamp.isoformat().replace("+00:00", "Z"),
         },
     ]
+
+
+def test_list_payment_events_filters_by_payment_intent(
+    monkeypatch,
+) -> None:
+    """Pass the optional payment-intent filter to the service."""
+
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    received_arguments = {}
+
+    def fake_list_payment_events(
+        session,
+        merchant_id,
+        payment_intent_id=None,
+    ):
+        received_arguments["merchant_id"] = merchant_id
+        received_arguments["payment_intent_id"] = payment_intent_id
+        return []
+
+    monkeypatch.setattr(
+        payment_events,
+        "list_payment_events",
+        fake_list_payment_events,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.get(
+            "/api/v1/payment-events",
+            params={
+                "payment_intent_id": str(payment_intent_id),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert received_arguments == {
+        "merchant_id": merchant_id,
+        "payment_intent_id": payment_intent_id,
+    }
