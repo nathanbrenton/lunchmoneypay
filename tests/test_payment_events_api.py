@@ -166,9 +166,11 @@ def test_list_payment_events_uses_authenticated_merchant_and_returns_empty_list(
         session,
         merchant_id,
         payment_intent_id=None,
+        event_type=None,
     ):
         received_merchant_ids.append(merchant_id)
         assert payment_intent_id is None
+        assert event_type is None
         return []
 
     monkeypatch.setattr(
@@ -224,7 +226,9 @@ def test_list_payment_events_returns_serialized_records(
     monkeypatch.setattr(
         payment_events,
         "list_payment_events",
-        lambda session, merchant_id, payment_intent_id=None: [payment_event],
+        lambda session, merchant_id, payment_intent_id=None, event_type=None: [
+            payment_event
+        ],
     )
 
     app.dependency_overrides[get_db_session] = override_get_db_session
@@ -274,9 +278,11 @@ def test_list_payment_events_filters_by_payment_intent(
         session,
         merchant_id,
         payment_intent_id=None,
+        event_type=None,
     ):
         received_arguments["merchant_id"] = merchant_id
         received_arguments["payment_intent_id"] = payment_intent_id
+        received_arguments["event_type"] = event_type
         return []
 
     monkeypatch.setattr(
@@ -303,4 +309,61 @@ def test_list_payment_events_filters_by_payment_intent(
     assert received_arguments == {
         "merchant_id": merchant_id,
         "payment_intent_id": payment_intent_id,
+        "event_type": None,
+    }
+
+
+def test_list_payment_events_filters_by_event_type(
+    monkeypatch,
+) -> None:
+    """Pass the optional event-type filter to the service."""
+
+    merchant_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    received_arguments = {}
+
+    def fake_list_payment_events(
+        session,
+        merchant_id,
+        payment_intent_id=None,
+        event_type=None,
+    ):
+        received_arguments["merchant_id"] = merchant_id
+        received_arguments["payment_intent_id"] = payment_intent_id
+        received_arguments["event_type"] = event_type
+        return []
+
+    monkeypatch.setattr(
+        payment_events,
+        "list_payment_events",
+        fake_list_payment_events,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.get(
+            "/api/v1/payment-events",
+            params={
+                "event_type": "payment_intent.payment_failed",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert received_arguments == {
+        "merchant_id": merchant_id,
+        "payment_intent_id": None,
+        "event_type": "payment_intent.payment_failed",
     }

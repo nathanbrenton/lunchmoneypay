@@ -285,3 +285,44 @@ def test_list_payment_events_filters_by_payment_intent() -> None:
     assert "payment_events.payment_intent_id" in compiled
     assert payment_intent_id.hex in compiled
     assert "payment_events.created_at DESC" in compiled
+
+
+def test_list_payment_events_filters_by_event_type() -> None:
+    """List only events matching the requested event type."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+
+    payment_event = PaymentEvent(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        payment_intent_id=uuid.uuid4(),
+        event_type="payment_intent.payment_failed",
+        payload={
+            "status": "requires_payment_method",
+            "last_error_code": "card_declined",
+        },
+    )
+
+    session.scalars.return_value.all.return_value = [payment_event]
+
+    result = list_payment_events(
+        session=session,
+        merchant_id=merchant_id,
+        event_type="payment_intent.payment_failed",
+    )
+
+    assert result == [payment_event]
+
+    statement = session.scalars.call_args.args[0]
+    compiled = str(
+        statement.compile(
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "payment_events.merchant_id" in compiled
+    assert merchant_id.hex in compiled
+    assert "payment_events.event_type" in compiled
+    assert "payment_intent.payment_failed" in compiled
+    assert "payment_events.created_at DESC" in compiled

@@ -59,6 +59,7 @@ def list_payment_events(
     session: Session,
     merchant_id: uuid.UUID,
     payment_intent_id: uuid.UUID | None = None,
+    event_type: str | None = None,
 ) -> list[PaymentEvent]:
     """List a merchant's payment events, newest first."""
 
@@ -69,6 +70,11 @@ def list_payment_events(
     if payment_intent_id is not None:
         statement = statement.where(
             PaymentEvent.payment_intent_id == payment_intent_id,
+        )
+
+    if event_type is not None:
+        statement = statement.where(
+            PaymentEvent.event_type == event_type,
         )
 
     statement = statement.order_by(
