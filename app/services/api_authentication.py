@@ -18,11 +18,7 @@ def extract_key_prefix(api_key: str) -> str:
 
     key_prefix, separator, secret = api_key.partition(".")
 
-    if (
-        not separator
-        or not key_prefix.startswith("lmp_")
-        or not secret
-    ):
+    if not separator or not key_prefix.startswith("lmp_") or not secret:
         raise InvalidApiKeyError("Invalid API key.")
 
     return key_prefix
@@ -54,16 +50,9 @@ def authenticate_api_key(
         raise InvalidApiKeyError("Invalid API key.")
 
     if credential.status != "active":
-        raise InactiveApiCredentialError(
-            "API credential is not active."
-        )
+        raise InactiveApiCredentialError("API credential is not active.")
 
-    if (
-        credential.expires_at is not None
-        and credential.expires_at <= datetime.now(UTC)
-    ):
-        raise InactiveApiCredentialError(
-            "API credential has expired."
-        )
+    if credential.expires_at is not None and credential.expires_at <= datetime.now(UTC):
+        raise InactiveApiCredentialError("API credential has expired.")
 
     return credential
