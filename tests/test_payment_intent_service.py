@@ -10,7 +10,6 @@ from app.models.customer import Customer
 from app.models.payment_intent import PaymentIntent
 from app.models.payment_method import PaymentMethod
 from app.schemas.payment_intent import (
-    PaymentIntentConfirm,
     PaymentIntentCreate,
 )
 from app.services import payment_intent as payment_intent_service
@@ -269,40 +268,52 @@ def test_list_payment_intents_returns_empty_list() -> None:
 
 
 def test_confirm_payment_intent_marks_payment_as_succeeded() -> None:
-    """Confirm an eligible mock payment intent successfully."""
+    """Confirm successfully using the attached payment method scenario."""
 
     session = MagicMock(spec=Session)
     merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
     payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
 
     payment_intent = PaymentIntent(
         id=payment_intent_id,
         merchant_id=merchant_id,
-        customer_id=uuid.uuid4(),
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
         external_reference="homesteady-payment-123",
         amount_minor=2500,
         currency="USD",
         status="requires_payment_method",
     )
 
-    session.get.return_value = payment_intent
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="success",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
 
     result = confirm_payment_intent(
         session=session,
         merchant_id=merchant_id,
         payment_intent_id=payment_intent_id,
-        payment_intent_confirm=PaymentIntentConfirm(
-            test_scenario="success",
-        ),
     )
 
     assert result is payment_intent
-    assert payment_intent.status == "succeeded"
-
-    session.get.assert_called_once_with(
-        PaymentIntent,
-        payment_intent_id,
-    )
+    assert result.status == "succeeded"
+    assert result.last_error_code is None
     session.commit.assert_called_once_with()
     session.refresh.assert_called_once_with(payment_intent)
 
@@ -335,9 +346,6 @@ def test_confirm_payment_intent_rejects_invalid_status() -> None:
             session=session,
             merchant_id=merchant_id,
             payment_intent_id=payment_intent_id,
-            payment_intent_confirm=PaymentIntentConfirm(
-                test_scenario="success",
-            ),
         )
 
     session.commit.assert_not_called()
@@ -415,16 +423,19 @@ def test_cancel_payment_intent_rejects_invalid_status() -> None:
 
 
 def test_confirm_payment_intent_records_controlled_decline() -> None:
-    """Record a deterministic mock decline without ending the payment intent."""
+    """Record a decline using the attached payment method scenario."""
 
     session = MagicMock(spec=Session)
     merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
     payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
 
     payment_intent = PaymentIntent(
         id=payment_intent_id,
         merchant_id=merchant_id,
-        customer_id=uuid.uuid4(),
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
         external_reference="homesteady-payment-decline",
         amount_minor=2500,
         currency="USD",
@@ -432,36 +443,51 @@ def test_confirm_payment_intent_records_controlled_decline() -> None:
         last_error_code=None,
     )
 
-    session.get.return_value = payment_intent
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4000",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="card_declined",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
 
     result = confirm_payment_intent(
         session=session,
         merchant_id=merchant_id,
         payment_intent_id=payment_intent_id,
-        payment_intent_confirm=PaymentIntentConfirm(
-            test_scenario="card_declined",
-        ),
     )
 
     assert result is payment_intent
-    assert payment_intent.status == "requires_payment_method"
-    assert payment_intent.last_error_code == "card_declined"
-
+    assert result.status == "requires_payment_method"
+    assert result.last_error_code == "card_declined"
     session.commit.assert_called_once_with()
     session.refresh.assert_called_once_with(payment_intent)
 
 
 def test_confirm_payment_intent_clears_previous_error_on_success() -> None:
-    """Clear the last processing error when a retry succeeds."""
+    """Clear the previous error when the attached method succeeds."""
 
     session = MagicMock(spec=Session)
     merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
     payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
 
     payment_intent = PaymentIntent(
         id=payment_intent_id,
         merchant_id=merchant_id,
-        customer_id=uuid.uuid4(),
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
         external_reference="homesteady-payment-retry",
         amount_minor=2500,
         currency="USD",
@@ -469,38 +495,51 @@ def test_confirm_payment_intent_clears_previous_error_on_success() -> None:
         last_error_code="card_declined",
     )
 
-    session.get.return_value = payment_intent
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="success",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
 
     result = confirm_payment_intent(
         session=session,
         merchant_id=merchant_id,
         payment_intent_id=payment_intent_id,
-        payment_intent_confirm=PaymentIntentConfirm(
-            test_scenario="success",
-        ),
     )
 
     assert result is payment_intent
-    assert payment_intent.status == "succeeded"
-    assert payment_intent.last_error_code is None
-
+    assert result.status == "succeeded"
+    assert result.last_error_code is None
     session.commit.assert_called_once_with()
     session.refresh.assert_called_once_with(payment_intent)
 
 
-def test_confirm_payment_intent_uses_explicit_decline_scenario() -> None:
-    """Use the confirmation request to trigger a controlled decline."""
-
-    from app.schemas.payment_intent import PaymentIntentConfirm
+def test_confirm_payment_intent_uses_attached_success_scenario() -> None:
+    """Use the success scenario stored on the attached payment method."""
 
     session = MagicMock(spec=Session)
     merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
     payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
 
     payment_intent = PaymentIntent(
         id=payment_intent_id,
         merchant_id=merchant_id,
-        customer_id=uuid.uuid4(),
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
         external_reference="ordinary-payment-reference",
         amount_minor=2500,
         currency="USD",
@@ -508,20 +547,34 @@ def test_confirm_payment_intent_uses_explicit_decline_scenario() -> None:
         last_error_code=None,
     )
 
-    session.get.return_value = payment_intent
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="success",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
 
     result = confirm_payment_intent(
         session=session,
         merchant_id=merchant_id,
         payment_intent_id=payment_intent_id,
-        payment_intent_confirm=PaymentIntentConfirm(
-            test_scenario="card_declined",
-        ),
     )
 
-    assert result is payment_intent
-    assert payment_intent.status == "requires_payment_method"
-    assert payment_intent.last_error_code == "card_declined"
+    assert result.status == "succeeded"
+    assert result.last_error_code is None
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(payment_intent)
 
 
 def test_attach_payment_method_sets_compatible_method_on_intent() -> None:
@@ -676,5 +729,197 @@ def test_attach_payment_method_rejects_inactive_method() -> None:
         )
 
     assert payment_intent.payment_method_id is None
+    session.commit.assert_not_called()
+    session.refresh.assert_not_called()
+
+
+def test_confirm_payment_intent_uses_attached_payment_method_scenario() -> None:
+    """Use the attached payment method's stored test scenario."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
+        external_reference="homesteady-attached-decline",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4000",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="card_declined",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
+
+    result = payment_intent_service.confirm_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert result is payment_intent
+    assert result.status == "requires_payment_method"
+    assert result.last_error_code == "card_declined"
+
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(payment_intent)
+
+
+def test_confirm_payment_intent_uses_attached_decline_scenario() -> None:
+    """Use the decline scenario stored on the attached payment method."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
+        external_reference="homesteady-attached-method-precedence",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4000",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="card_declined",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
+
+    result = payment_intent_service.confirm_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert result is payment_intent
+    assert result.status == "requires_payment_method"
+    assert result.last_error_code == "card_declined"
+
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(payment_intent)
+
+
+def test_confirm_payment_intent_rejects_inactive_attached_method() -> None:
+    """Reject confirmation when the attached payment method is inactive."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
+        external_reference="homesteady-inactive-attached-method",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="inactive",
+        test_scenario="success",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
+
+    with pytest.raises(
+        payment_intent_service.PaymentMethodInactiveError,
+    ):
+        payment_intent_service.confirm_payment_intent(
+            session=session,
+            merchant_id=merchant_id,
+            payment_intent_id=payment_intent_id,
+        )
+
+    assert payment_intent.status == "requires_payment_method"
+    assert payment_intent.last_error_code is None
+    session.commit.assert_not_called()
+    session.refresh.assert_not_called()
+
+
+def test_confirm_payment_intent_requires_attached_payment_method() -> None:
+    """Reject confirmation when no payment method is attached."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        payment_method_id=None,
+        external_reference="homesteady-missing-payment-method",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+
+    session.get.return_value = payment_intent
+
+    with pytest.raises(
+        payment_intent_service.PaymentMethodRequiredError,
+    ):
+        payment_intent_service.confirm_payment_intent(
+            session=session,
+            merchant_id=merchant_id,
+            payment_intent_id=payment_intent_id,
+        )
+
+    assert payment_intent.status == "requires_payment_method"
+    assert payment_intent.last_error_code is None
     session.commit.assert_not_called()
     session.refresh.assert_not_called()

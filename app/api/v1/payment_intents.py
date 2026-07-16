@@ -1,15 +1,13 @@
 """Payment-intent API endpoints."""
 
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Body, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import AuthenticatedCredential, DatabaseSession
 from app.models.payment_intent import PaymentIntent
 from app.schemas.payment_intent import (
     PaymentIntentAttach,
-    PaymentIntentConfirm,
     PaymentIntentCreate,
     PaymentIntentRead,
 )
@@ -21,6 +19,7 @@ from app.services.exceptions import (
     PaymentMethodCustomerMismatchError,
     PaymentMethodInactiveError,
     PaymentMethodNotFoundError,
+    PaymentMethodRequiredError,
 )
 from app.services.payment_intent import (
     attach_payment_method,
@@ -107,22 +106,14 @@ def confirm_payment_intent_endpoint(
     payment_intent_id: uuid.UUID,
     credential: AuthenticatedCredential,
     session: DatabaseSession,
-    payment_intent_confirm: Annotated[
-        PaymentIntentConfirm | None,
-        Body(),
-    ] = None,
 ) -> PaymentIntent:
-    """Confirm an eligible payment intent for the authenticated merchant."""
-
-    # An omitted body uses the normal successful mock scenario.
-    confirmation = payment_intent_confirm or PaymentIntentConfirm()
+    """Confirm using the attached payment method's stored scenario."""
 
     try:
         return confirm_payment_intent(
             session=session,
             merchant_id=credential.merchant_id,
             payment_intent_id=payment_intent_id,
-            payment_intent_confirm=confirmation,
         )
     except PaymentIntentNotFoundError as exc:
         raise HTTPException(
@@ -133,6 +124,18 @@ def confirm_payment_intent_endpoint(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
+        ) from exc
+
+    except PaymentMethodInactiveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attached payment method is inactive.",
+        ) from exc
+
+    except PaymentMethodRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payment method must be attached before confirmation.",
         ) from exc
 
 

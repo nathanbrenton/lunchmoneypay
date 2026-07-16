@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
 from app.models.payment_intent import PaymentIntent
-from app.schemas.payment_intent import PaymentIntentConfirm, PaymentIntentCreate
+from app.schemas.payment_intent import PaymentIntentCreate
 from app.services.exceptions import (
     CustomerNotFoundError,
     PaymentIntentAlreadyExistsError,
@@ -16,6 +16,7 @@ from app.services.exceptions import (
     PaymentIntentNotFoundError,
     PaymentMethodCustomerMismatchError,
     PaymentMethodInactiveError,
+    PaymentMethodRequiredError,
 )
 from app.services.payment_method import get_payment_method
 
@@ -101,9 +102,8 @@ def confirm_payment_intent(
     session: Session,
     merchant_id: uuid.UUID,
     payment_intent_id: uuid.UUID,
-    payment_intent_confirm: PaymentIntentConfirm,
 ) -> PaymentIntent:
-    """Confirm an eligible mock payment intent successfully."""
+    """Confirm an eligible mock payment intent."""
 
     payment_intent = get_payment_intent(
         session=session,
@@ -117,7 +117,21 @@ def confirm_payment_intent(
             payment_intent.status,
         )
 
-    if payment_intent_confirm.test_scenario == "card_declined":
+    if payment_intent.payment_method_id is None:
+        raise PaymentMethodRequiredError(payment_intent.id)
+
+    payment_method = get_payment_method(
+        session=session,
+        merchant_id=merchant_id,
+        payment_method_id=payment_intent.payment_method_id,
+    )
+
+    if payment_method.status != "active":
+        raise PaymentMethodInactiveError(payment_method.id)
+
+    test_scenario = payment_method.test_scenario
+
+    if test_scenario == "card_declined":
         payment_intent.last_error_code = "card_declined"
     else:
         payment_intent.status = "succeeded"

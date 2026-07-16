@@ -71,3 +71,7 @@ class PaymentMethodCustomerMismatchError(Exception):
 
 class PaymentMethodInactiveError(Exception):
     """Raised when an inactive payment method cannot be used."""
+
+
+class PaymentMethodRequiredError(Exception):
+    """Raised when confirmation requires an attached payment method."""

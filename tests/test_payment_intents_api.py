@@ -463,11 +463,9 @@ def test_confirm_payment_intent_uses_authenticated_merchant(
         session,
         merchant_id,
         payment_intent_id,
-        payment_intent_confirm,
     ):
         received_arguments["merchant_id"] = merchant_id
         received_arguments["payment_intent_id"] = payment_intent_id
-        received_arguments["test_scenario"] = payment_intent_confirm.test_scenario
         return payment_intent
 
     monkeypatch.setattr(
@@ -494,7 +492,6 @@ def test_confirm_payment_intent_uses_authenticated_merchant(
     assert received_arguments == {
         "merchant_id": merchant_id,
         "payment_intent_id": payment_intent_id,
-        "test_scenario": "success",
     }
 
 
@@ -518,7 +515,6 @@ def test_confirm_payment_intent_returns_not_found(
         session,
         merchant_id,
         payment_intent_id,
-        payment_intent_confirm,
     ):
         raise payment_intents.PaymentIntentNotFoundError(
             payment_intent_id,
@@ -566,7 +562,6 @@ def test_confirm_payment_intent_returns_conflict_for_invalid_state(
         session,
         merchant_id,
         payment_intent_id,
-        payment_intent_confirm,
     ):
         raise payment_intents.PaymentIntentInvalidStateError(
             "confirmed",
@@ -792,9 +787,7 @@ def test_confirm_payment_intent_returns_controlled_decline(
     monkeypatch.setattr(
         payment_intents,
         "confirm_payment_intent",
-        lambda session, merchant_id, payment_intent_id, payment_intent_confirm: (
-            payment_intent
-        ),
+        lambda session, merchant_id, payment_intent_id: payment_intent,
     )
 
     app.dependency_overrides[get_db_session] = override_get_db_session
@@ -1042,4 +1035,168 @@ def test_attach_payment_method_returns_inactive_conflict(
     assert response.status_code == 409
     assert response.json() == {
         "detail": "Payment method is inactive.",
+    }
+
+
+def test_confirm_payment_intent_returns_inactive_method_conflict(
+    monkeypatch,
+) -> None:
+    """Return 409 when the attached payment method is inactive."""
+
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    def raise_inactive(
+        session,
+        merchant_id,
+        payment_intent_id,
+    ):
+        raise payment_intents.PaymentMethodInactiveError(
+            uuid.uuid4(),
+        )
+
+    monkeypatch.setattr(
+        payment_intents,
+        "confirm_payment_intent",
+        raise_inactive,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-intents/{payment_intent_id}/confirm",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Attached payment method is inactive.",
+    }
+
+
+def test_confirm_payment_intent_returns_payment_method_required_conflict(
+    monkeypatch,
+) -> None:
+    """Return 409 when confirmation has no attached payment method."""
+
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    def raise_payment_method_required(
+        session,
+        merchant_id,
+        payment_intent_id,
+    ):
+        raise payment_intents.PaymentMethodRequiredError(
+            payment_intent_id,
+        )
+
+    monkeypatch.setattr(
+        payment_intents,
+        "confirm_payment_intent",
+        raise_payment_method_required,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-intents/{payment_intent_id}/confirm",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Payment method must be attached before confirmation.",
+    }
+
+
+def test_confirm_payment_intent_does_not_pass_legacy_scenario(
+    monkeypatch,
+) -> None:
+    """Confirm without forwarding a request-controlled test scenario."""
+
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+    timestamp = datetime.now(UTC)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        payment_method_id=payment_method_id,
+        external_reference="homesteady-confirm-attached-method",
+        amount_minor=2500,
+        currency="USD",
+        status="succeeded",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    received_arguments = {}
+
+    def fake_confirm_payment_intent(
+        session,
+        merchant_id,
+        payment_intent_id,
+    ):
+        received_arguments["merchant_id"] = merchant_id
+        received_arguments["payment_intent_id"] = payment_intent_id
+        return payment_intent
+
+    monkeypatch.setattr(
+        payment_intents,
+        "confirm_payment_intent",
+        fake_confirm_payment_intent,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-intents/{payment_intent_id}/confirm",
+            json={
+                "test_scenario": "card_declined",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "succeeded"
+
+    assert received_arguments == {
+        "merchant_id": merchant_id,
+        "payment_intent_id": payment_intent_id,
     }
