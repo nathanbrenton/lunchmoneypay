@@ -75,3 +75,7 @@ class PaymentMethodInactiveError(Exception):
 
 class PaymentMethodRequiredError(Exception):
     """Raised when confirmation requires an attached payment method."""
+
+
+class PaymentEventNotFoundError(Exception):
+    """Raised when a payment event is not accessible to a merchant."""

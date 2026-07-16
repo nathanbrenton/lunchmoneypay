@@ -3,11 +3,17 @@
 import uuid
 from unittest.mock import MagicMock
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.models.payment_event import PaymentEvent
 from app.models.payment_intent import PaymentIntent
-from app.services.payment_event import create_payment_event
+from app.services.exceptions import PaymentEventNotFoundError
+from app.services.payment_event import (
+    create_payment_event,
+    get_payment_event,
+    list_payment_events,
+)
 
 
 def test_create_payment_event_records_payment_intent_snapshot() -> None:
@@ -118,3 +124,129 @@ def test_create_payment_event_records_canceled_payment_snapshot() -> None:
     session.add.assert_called_once_with(result)
     session.commit.assert_not_called()
     session.refresh.assert_not_called()
+
+
+def test_get_payment_event_returns_merchant_owned_record() -> None:
+    """Return a payment event owned by the authenticated merchant."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_event_id = uuid.uuid4()
+
+    payment_event = PaymentEvent(
+        id=payment_event_id,
+        merchant_id=merchant_id,
+        payment_intent_id=uuid.uuid4(),
+        event_type="payment_intent.succeeded",
+        payload={
+            "status": "succeeded",
+        },
+    )
+
+    session.get.return_value = payment_event
+
+    result = get_payment_event(
+        session=session,
+        merchant_id=merchant_id,
+        payment_event_id=payment_event_id,
+    )
+
+    assert result is payment_event
+    session.get.assert_called_once_with(
+        PaymentEvent,
+        payment_event_id,
+    )
+
+
+def test_get_payment_event_rejects_other_merchant_record() -> None:
+    """Hide payment events owned by another merchant."""
+
+    session = MagicMock(spec=Session)
+    authenticated_merchant_id = uuid.uuid4()
+    other_merchant_id = uuid.uuid4()
+    payment_event_id = uuid.uuid4()
+
+    payment_event = PaymentEvent(
+        id=payment_event_id,
+        merchant_id=other_merchant_id,
+        payment_intent_id=uuid.uuid4(),
+        event_type="payment_intent.succeeded",
+        payload={
+            "status": "succeeded",
+        },
+    )
+
+    session.get.return_value = payment_event
+
+    with pytest.raises(PaymentEventNotFoundError):
+        get_payment_event(
+            session=session,
+            merchant_id=authenticated_merchant_id,
+            payment_event_id=payment_event_id,
+        )
+
+    session.get.assert_called_once_with(
+        PaymentEvent,
+        payment_event_id,
+    )
+
+
+def test_list_payment_events_filters_by_merchant_and_orders_newest_first() -> None:
+    """List only the authenticated merchant's events, newest first."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+
+    newest_event = PaymentEvent(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        payment_intent_id=uuid.uuid4(),
+        event_type="payment_intent.succeeded",
+        payload={"status": "succeeded"},
+    )
+    older_event = PaymentEvent(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        payment_intent_id=uuid.uuid4(),
+        event_type="payment_intent.payment_failed",
+        payload={"status": "requires_payment_method"},
+    )
+
+    session.scalars.return_value.all.return_value = [
+        newest_event,
+        older_event,
+    ]
+
+    result = list_payment_events(
+        session=session,
+        merchant_id=merchant_id,
+    )
+
+    assert result == [
+        newest_event,
+        older_event,
+    ]
+
+    statement = session.scalars.call_args.args[0]
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+    assert "payment_events.merchant_id" in compiled
+    assert merchant_id.hex in compiled
+    assert "payment_events.created_at DESC" in compiled
+
+
+def test_list_payment_events_returns_empty_list() -> None:
+    """Return an empty list when a merchant has no payment events."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+
+    session.scalars.return_value.all.return_value = []
+
+    result = list_payment_events(
+        session=session,
+        merchant_id=merchant_id,
+    )
+
+    assert result == []
+    session.scalars.assert_called_once()
