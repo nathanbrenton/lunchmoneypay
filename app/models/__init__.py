@@ -7,6 +7,8 @@ from app.models.payment_event import PaymentEvent
 from app.models.payment_intent import PaymentIntent
 from app.models.payment_method import PaymentMethod
 from app.models.refund import Refund
+from app.models.webhook_delivery import WebhookDelivery
+from app.models.webhook_endpoint import WebhookEndpoint
 
 __all__ = [
     "Customer",
@@ -16,4 +18,6 @@ __all__ = [
     "PaymentIntent",
     "PaymentMethod",
     "Refund",
+    "WebhookEndpoint",
+    "WebhookDelivery",
 ]

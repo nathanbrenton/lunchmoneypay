@@ -91,6 +91,7 @@ def test_create_refund_records_partial_refund_and_event(
     }
 
     session.add.assert_called_once_with(result)
+    session.flush.assert_called_once_with()
     session.commit.assert_called_once_with()
     session.refresh.assert_called_once_with(result)
 
@@ -249,3 +250,51 @@ def test_list_refunds_filters_by_merchant_and_payment_intent() -> None:
     assert merchant_id.hex in compiled
     assert payment_intent_id.hex in compiled
     assert "refunds.created_at DESC" in compiled
+
+
+def test_create_refund_flushes_before_creating_event(
+    monkeypatch,
+) -> None:
+    """Assign the refund UUID before snapshotting its event."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_intent = build_succeeded_payment_intent(
+        merchant_id,
+        payment_intent_id,
+    )
+    call_order = []
+
+    monkeypatch.setattr(
+        refund_service,
+        "get_payment_intent",
+        lambda **kwargs: payment_intent,
+    )
+    session.scalar.return_value = 0
+    session.flush.side_effect = lambda: call_order.append("flush")
+
+    def fake_create_refund_event(
+        session,
+        refund,
+        payment_intent,
+    ):
+        call_order.append("event")
+
+    monkeypatch.setattr(
+        refund_service,
+        "create_refund_event",
+        fake_create_refund_event,
+    )
+
+    refund_service.create_refund(
+        session=session,
+        merchant_id=merchant_id,
+        refund_create=RefundCreate(
+            payment_intent_id=payment_intent_id,
+            external_reference="refund-flush-order",
+            amount_minor=500,
+        ),
+    )
+
+    assert call_order == ["flush", "event"]

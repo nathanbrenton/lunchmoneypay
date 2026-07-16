@@ -65,6 +65,7 @@ def create_refund(
     )
 
     session.add(refund)
+    session.flush()
 
     create_refund_event(
         session=session,

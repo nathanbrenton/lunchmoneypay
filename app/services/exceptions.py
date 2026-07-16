@@ -95,3 +95,11 @@ class PaymentIntentNotRefundableError(Exception):
 
 class RefundAmountExceedsAvailableError(Exception):
     """Raised when a refund exceeds the remaining refundable amount."""
+
+
+class WebhookEndpointAlreadyExistsError(Exception):
+    """Raised when a merchant registers the same webhook URL twice."""
+
+
+class WebhookEndpointNotFoundError(Exception):
+    """Raised when a webhook endpoint is not accessible to a merchant."""
