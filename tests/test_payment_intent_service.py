@@ -923,3 +923,195 @@ def test_confirm_payment_intent_requires_attached_payment_method() -> None:
     assert payment_intent.last_error_code is None
     session.commit.assert_not_called()
     session.refresh.assert_not_called()
+
+
+def test_confirm_payment_intent_records_success_event(
+    monkeypatch,
+) -> None:
+    """Record a durable event when confirmation succeeds."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
+        external_reference="homesteady-confirm-success-event",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="success",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
+
+    recorded_event = {}
+
+    def fake_create_payment_event(
+        session,
+        payment_intent,
+        event_type,
+    ):
+        recorded_event["payment_intent"] = payment_intent
+        recorded_event["event_type"] = event_type
+
+    monkeypatch.setattr(
+        payment_intent_service,
+        "create_payment_event",
+        fake_create_payment_event,
+        raising=False,
+    )
+
+    result = payment_intent_service.confirm_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert result.status == "succeeded"
+    assert recorded_event == {
+        "payment_intent": payment_intent,
+        "event_type": "payment_intent.succeeded",
+    }
+
+
+def test_confirm_payment_intent_records_failed_event(
+    monkeypatch,
+) -> None:
+    """Record a durable event when confirmation is declined."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
+        external_reference="homesteady-confirm-failed-event",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        last_error_code=None,
+    )
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4000",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="card_declined",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
+
+    recorded_event = {}
+
+    def fake_create_payment_event(
+        session,
+        payment_intent,
+        event_type,
+    ):
+        recorded_event["payment_intent"] = payment_intent
+        recorded_event["event_type"] = event_type
+
+    monkeypatch.setattr(
+        payment_intent_service,
+        "create_payment_event",
+        fake_create_payment_event,
+    )
+
+    result = payment_intent_service.confirm_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert result.status == "requires_payment_method"
+    assert result.last_error_code == "card_declined"
+    assert recorded_event == {
+        "payment_intent": payment_intent,
+        "event_type": "payment_intent.payment_failed",
+    }
+
+
+def test_cancel_payment_intent_records_canceled_event(
+    monkeypatch,
+) -> None:
+    """Record a durable event when a payment intent is canceled."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        external_reference="homesteady-cancel-event",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        last_error_code=None,
+    )
+
+    session.get.return_value = payment_intent
+
+    recorded_event = {}
+
+    def fake_create_payment_event(
+        session,
+        payment_intent,
+        event_type,
+    ):
+        recorded_event["payment_intent"] = payment_intent
+        recorded_event["event_type"] = event_type
+
+    monkeypatch.setattr(
+        payment_intent_service,
+        "create_payment_event",
+        fake_create_payment_event,
+    )
+
+    result = payment_intent_service.cancel_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    assert result.status == "canceled"
+    assert recorded_event == {
+        "payment_intent": payment_intent,
+        "event_type": "payment_intent.canceled",
+    }

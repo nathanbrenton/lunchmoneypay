@@ -18,6 +18,7 @@ from app.services.exceptions import (
     PaymentMethodInactiveError,
     PaymentMethodRequiredError,
 )
+from app.services.payment_event import create_payment_event
 from app.services.payment_method import get_payment_method
 
 
@@ -140,6 +141,17 @@ def confirm_payment_intent(
     session.commit()
     session.refresh(payment_intent)
 
+    if payment_intent.status == "succeeded":
+        event_type = "payment_intent.succeeded"
+    else:
+        event_type = "payment_intent.payment_failed"
+
+    create_payment_event(
+        session=session,
+        payment_intent=payment_intent,
+        event_type=event_type,
+    )
+
     return payment_intent
 
 
@@ -166,6 +178,12 @@ def cancel_payment_intent(
 
     session.commit()
     session.refresh(payment_intent)
+
+    create_payment_event(
+        session=session,
+        payment_intent=payment_intent,
+        event_type="payment_intent.canceled",
+    )
 
     return payment_intent
 
