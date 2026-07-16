@@ -2,12 +2,16 @@
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
 from app.models.payment_method import PaymentMethod
 from app.schemas.payment_method import PaymentMethodCreate
-from app.services.exceptions import CustomerNotFoundError
+from app.services.exceptions import (
+    CustomerNotFoundError,
+    PaymentMethodNotFoundError,
+)
 
 
 def create_payment_method(
@@ -43,3 +47,39 @@ def create_payment_method(
     session.refresh(payment_method)
 
     return payment_method
+
+
+def get_payment_method(
+    session: Session,
+    merchant_id: uuid.UUID,
+    payment_method_id: uuid.UUID,
+) -> PaymentMethod:
+    """Return a payment method owned by the specified merchant."""
+
+    payment_method = session.get(
+        PaymentMethod,
+        payment_method_id,
+    )
+
+    if payment_method is None or payment_method.merchant_id != merchant_id:
+        raise PaymentMethodNotFoundError(payment_method_id)
+
+    return payment_method
+
+
+def list_payment_methods(
+    session: Session,
+    merchant_id: uuid.UUID,
+) -> list[PaymentMethod]:
+    """Return payment methods owned by the specified merchant."""
+
+    statement = (
+        select(PaymentMethod)
+        .where(PaymentMethod.merchant_id == merchant_id)
+        .order_by(
+            PaymentMethod.created_at,
+            PaymentMethod.id,
+        )
+    )
+
+    return list(session.scalars(statement))

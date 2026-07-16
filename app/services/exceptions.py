@@ -25,6 +25,10 @@ class CustomerNotFoundError(Exception):
     """Raised when a customer cannot be found for a merchant."""
 
 
+class PaymentMethodNotFoundError(Exception):
+    """Raised when a payment method cannot be found for a merchant."""
+
+
 class PaymentIntentAlreadyExistsError(Exception):
     """Raised when a merchant reuses a payment-intent reference."""
 
