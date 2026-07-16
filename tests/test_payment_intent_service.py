@@ -3,14 +3,17 @@
 import uuid
 from unittest.mock import MagicMock
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.models.customer import Customer
 from app.models.payment_intent import PaymentIntent
+from app.models.payment_method import PaymentMethod
 from app.schemas.payment_intent import (
     PaymentIntentConfirm,
     PaymentIntentCreate,
 )
+from app.services import payment_intent as payment_intent_service
 from app.services.payment_intent import (
     cancel_payment_intent,
     confirm_payment_intent,
@@ -519,3 +522,159 @@ def test_confirm_payment_intent_uses_explicit_decline_scenario() -> None:
     assert result is payment_intent
     assert payment_intent.status == "requires_payment_method"
     assert payment_intent.last_error_code == "card_declined"
+
+
+def test_attach_payment_method_sets_compatible_method_on_intent() -> None:
+    """Attach an active payment method for the same merchant and customer."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        external_reference="homesteady-attach-payment-method",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="success",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
+
+    result = payment_intent_service.attach_payment_method(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+        payment_method_id=payment_method_id,
+    )
+
+    assert result is payment_intent
+    assert result.payment_method_id == payment_method_id
+
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(payment_intent)
+
+
+def test_attach_payment_method_rejects_different_customer() -> None:
+    """Reject a payment method owned by a different customer."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_intent_customer_id = uuid.uuid4()
+    payment_method_customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=payment_intent_customer_id,
+        external_reference="homesteady-customer-mismatch",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=payment_method_customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="success",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
+
+    with pytest.raises(
+        payment_intent_service.PaymentMethodCustomerMismatchError,
+    ):
+        payment_intent_service.attach_payment_method(
+            session=session,
+            merchant_id=merchant_id,
+            payment_intent_id=payment_intent_id,
+            payment_method_id=payment_method_id,
+        )
+
+    assert payment_intent.payment_method_id is None
+    session.commit.assert_not_called()
+    session.refresh.assert_not_called()
+
+
+def test_attach_payment_method_rejects_inactive_method() -> None:
+    """Reject attachment when the payment method is inactive."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        external_reference="homesteady-inactive-payment-method",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+    )
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="inactive",
+        test_scenario="success",
+    )
+
+    session.get.side_effect = [
+        payment_intent,
+        payment_method,
+    ]
+
+    with pytest.raises(
+        payment_intent_service.PaymentMethodInactiveError,
+    ):
+        payment_intent_service.attach_payment_method(
+            session=session,
+            merchant_id=merchant_id,
+            payment_intent_id=payment_intent_id,
+            payment_method_id=payment_method_id,
+        )
+
+    assert payment_intent.payment_method_id is None
+    session.commit.assert_not_called()
+    session.refresh.assert_not_called()

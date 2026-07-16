@@ -63,3 +63,11 @@ class PaymentIntentInvalidStateError(Exception):
         super().__init__(
             f"Payment intent cannot be {operation} from status: {current_status}."
         )
+
+
+class PaymentMethodCustomerMismatchError(Exception):
+    """Raised when a payment method belongs to a different customer."""
+
+
+class PaymentMethodInactiveError(Exception):
+    """Raised when an inactive payment method cannot be used."""

@@ -60,6 +60,11 @@ class PaymentIntent(Base):
         nullable=False,
     )
 
+    payment_method_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payment_methods.id"),
+        nullable=True,
+    )
+
     external_reference: Mapped[str] = mapped_column(
         String(255),
         nullable=False,

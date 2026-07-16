@@ -40,6 +40,7 @@ class PaymentIntentRead(BaseModel):
     id: uuid.UUID
     merchant_id: uuid.UUID
     customer_id: uuid.UUID
+    payment_method_id: uuid.UUID | None = None
     external_reference: str
     amount_minor: int
     currency: str
@@ -57,3 +58,9 @@ class PaymentIntentConfirm(BaseModel):
         pattern="^(success|card_declined)$",
         examples=["success"],
     )
+
+
+class PaymentIntentAttach(BaseModel):
+    """Payment-method attachment request."""
+
+    payment_method_id: uuid.UUID

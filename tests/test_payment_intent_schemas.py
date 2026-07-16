@@ -1,11 +1,13 @@
 """Tests for payment-intent API schemas."""
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.payment_intent import PaymentIntentCreate
+from app.models.payment_intent import PaymentIntent
+from app.schemas.payment_intent import PaymentIntentCreate, PaymentIntentRead
 
 
 def test_payment_intent_create_accepts_valid_fields() -> None:
@@ -59,10 +61,6 @@ def test_payment_intent_create_rejects_invalid_fields(
 def test_payment_intent_read_accepts_expected_fields() -> None:
     """Represent a persisted payment intent in API responses."""
 
-    from datetime import UTC, datetime
-
-    from app.schemas.payment_intent import PaymentIntentRead
-
     payment_intent_id = uuid.uuid4()
     merchant_id = uuid.uuid4()
     customer_id = uuid.uuid4()
@@ -88,10 +86,6 @@ def test_payment_intent_read_accepts_expected_fields() -> None:
 
 def test_payment_intent_read_accepts_optional_last_error_code() -> None:
     """Represent the latest mock processing error in API responses."""
-
-    from datetime import UTC, datetime
-
-    from app.schemas.payment_intent import PaymentIntentRead
 
     timestamp = datetime.now(UTC)
 
@@ -146,3 +140,41 @@ def test_payment_intent_confirm_rejects_unknown_scenario() -> None:
         PaymentIntentConfirm(
             test_scenario="insufficient_funds",
         )
+
+
+def test_payment_intent_read_includes_optional_payment_method_id() -> None:
+    """Serialize the payment method attached to a payment intent."""
+
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        id=uuid.uuid4(),
+        merchant_id=uuid.uuid4(),
+        customer_id=uuid.uuid4(),
+        payment_method_id=payment_method_id,
+        external_reference="homesteady-attached-method",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+
+    result = PaymentIntentRead.model_validate(payment_intent)
+
+    assert result.payment_method_id == payment_method_id
+    assert result.model_dump()["payment_method_id"] == payment_method_id
+
+
+def test_payment_intent_attach_accepts_payment_method_id() -> None:
+    """Accept the payment method selected for attachment."""
+
+    from app.schemas.payment_intent import PaymentIntentAttach
+
+    payment_method_id = uuid.uuid4()
+
+    attachment = PaymentIntentAttach(
+        payment_method_id=payment_method_id,
+    )
+
+    assert attachment.payment_method_id == payment_method_id

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, HTTPException, status
 from app.api.dependencies import AuthenticatedCredential, DatabaseSession
 from app.models.payment_intent import PaymentIntent
 from app.schemas.payment_intent import (
+    PaymentIntentAttach,
     PaymentIntentConfirm,
     PaymentIntentCreate,
     PaymentIntentRead,
@@ -17,8 +18,12 @@ from app.services.exceptions import (
     PaymentIntentAlreadyExistsError,
     PaymentIntentInvalidStateError,
     PaymentIntentNotFoundError,
+    PaymentMethodCustomerMismatchError,
+    PaymentMethodInactiveError,
+    PaymentMethodNotFoundError,
 )
 from app.services.payment_intent import (
+    attach_payment_method,
     cancel_payment_intent,
     confirm_payment_intent,
     create_payment_intent,
@@ -145,6 +150,42 @@ def list_payment_intents_endpoint(
         session=session,
         merchant_id=credential.merchant_id,
     )
+
+
+@router.post(
+    "/{payment_intent_id}/attach-payment-method",
+    response_model=PaymentIntentRead,
+)
+def attach_payment_method_endpoint(
+    payment_intent_id: uuid.UUID,
+    payment_intent_attach: PaymentIntentAttach,
+    credential: AuthenticatedCredential,
+    session: DatabaseSession,
+) -> PaymentIntent:
+    """Attach a payment method to a merchant-owned payment intent."""
+
+    try:
+        return attach_payment_method(
+            session=session,
+            merchant_id=credential.merchant_id,
+            payment_intent_id=payment_intent_id,
+            payment_method_id=payment_intent_attach.payment_method_id,
+        )
+    except (PaymentIntentNotFoundError, PaymentMethodNotFoundError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment intent or payment method not found.",
+        ) from exc
+    except PaymentMethodCustomerMismatchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payment method belongs to a different customer.",
+        ) from exc
+    except PaymentMethodInactiveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payment method is inactive.",
+        ) from exc
 
 
 @router.get(

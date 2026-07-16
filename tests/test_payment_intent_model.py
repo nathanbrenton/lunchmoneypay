@@ -1,5 +1,7 @@
 """Tests for the payment-intent database model."""
 
+import uuid
+
 from app.models.payment_intent import PaymentIntent
 
 
@@ -150,3 +152,26 @@ def test_payment_intent_allows_optional_last_error_code() -> None:
 
     assert column.nullable is True
     assert column.type.length == 50
+
+
+def test_payment_intent_has_optional_payment_method_foreign_key() -> None:
+    """Allow a payment method to be attached after intent creation."""
+
+    payment_method_id = uuid.uuid4()
+
+    payment_intent = PaymentIntent(
+        merchant_id=uuid.uuid4(),
+        customer_id=uuid.uuid4(),
+        payment_method_id=payment_method_id,
+        external_reference="homesteady-payment-with-method",
+        amount_minor=2500,
+        currency="USD",
+    )
+
+    assert payment_intent.payment_method_id == payment_method_id
+
+    column = PaymentIntent.__table__.c.payment_method_id
+
+    assert column.nullable is True
+    assert len(column.foreign_keys) == 1
+    assert next(iter(column.foreign_keys)).target_fullname == "payment_methods.id"

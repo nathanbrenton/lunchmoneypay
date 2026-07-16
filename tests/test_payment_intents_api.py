@@ -415,6 +415,7 @@ def test_list_payment_intents_returns_serialized_records(
             "id": str(payment_intent.id),
             "merchant_id": str(merchant_id),
             "customer_id": str(customer_id),
+            "payment_method_id": None,
             "external_reference": "homesteady-payment-123",
             "amount_minor": 2500,
             "currency": "USD",
@@ -810,3 +811,235 @@ def test_confirm_payment_intent_returns_controlled_decline(
     assert response.status_code == 200
     assert response.json()["status"] == "requires_payment_method"
     assert response.json()["last_error_code"] == "card_declined"
+
+
+def test_attach_payment_method_uses_authenticated_merchant(
+    monkeypatch,
+) -> None:
+    """Attach a payment method within the authenticated merchant boundary."""
+
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+    timestamp = datetime.now(UTC)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    payment_intent = PaymentIntent(
+        id=payment_intent_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        payment_method_id=payment_method_id,
+        external_reference="homesteady-attached-payment-method",
+        amount_minor=2500,
+        currency="USD",
+        status="requires_payment_method",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    received_arguments = {}
+
+    def fake_attach_payment_method(
+        session,
+        merchant_id,
+        payment_intent_id,
+        payment_method_id,
+    ):
+        received_arguments["merchant_id"] = merchant_id
+        received_arguments["payment_intent_id"] = payment_intent_id
+        received_arguments["payment_method_id"] = payment_method_id
+        return payment_intent
+
+    monkeypatch.setattr(
+        payment_intents,
+        "attach_payment_method",
+        fake_attach_payment_method,
+        raising=False,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-intents/{payment_intent_id}/attach-payment-method",
+            json={
+                "payment_method_id": str(payment_method_id),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(payment_intent_id)
+    assert response.json()["payment_method_id"] == str(payment_method_id)
+
+    assert received_arguments == {
+        "merchant_id": merchant_id,
+        "payment_intent_id": payment_intent_id,
+        "payment_method_id": payment_method_id,
+    }
+
+
+def test_attach_payment_method_returns_not_found(
+    monkeypatch,
+) -> None:
+    """Return 404 when the intent or payment method is not merchant-accessible."""
+
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    def raise_not_found(
+        session,
+        merchant_id,
+        payment_intent_id,
+        payment_method_id,
+    ):
+        raise payment_intents.PaymentMethodNotFoundError(
+            payment_method_id,
+        )
+
+    monkeypatch.setattr(
+        payment_intents,
+        "attach_payment_method",
+        raise_not_found,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-intents/{payment_intent_id}/attach-payment-method",
+            json={
+                "payment_method_id": str(payment_method_id),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Payment intent or payment method not found.",
+    }
+
+
+def test_attach_payment_method_returns_customer_mismatch_conflict(
+    monkeypatch,
+) -> None:
+    """Return 409 when the payment method belongs to another customer."""
+
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    def raise_customer_mismatch(
+        session,
+        merchant_id,
+        payment_intent_id,
+        payment_method_id,
+    ):
+        raise payment_intents.PaymentMethodCustomerMismatchError(
+            payment_method_id,
+        )
+
+    monkeypatch.setattr(
+        payment_intents,
+        "attach_payment_method",
+        raise_customer_mismatch,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-intents/{payment_intent_id}/attach-payment-method",
+            json={
+                "payment_method_id": str(payment_method_id),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Payment method belongs to a different customer.",
+    }
+
+
+def test_attach_payment_method_returns_inactive_conflict(
+    monkeypatch,
+) -> None:
+    """Return 409 when the payment method is inactive."""
+
+    merchant_id = uuid.uuid4()
+    payment_intent_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    def raise_inactive(
+        session,
+        merchant_id,
+        payment_intent_id,
+        payment_method_id,
+    ):
+        raise payment_intents.PaymentMethodInactiveError(
+            payment_method_id,
+        )
+
+    monkeypatch.setattr(
+        payment_intents,
+        "attach_payment_method",
+        raise_inactive,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-intents/{payment_intent_id}/attach-payment-method",
+            json={
+                "payment_method_id": str(payment_method_id),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Payment method is inactive.",
+    }

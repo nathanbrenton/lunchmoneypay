@@ -14,7 +14,10 @@ from app.services.exceptions import (
     PaymentIntentAlreadyExistsError,
     PaymentIntentInvalidStateError,
     PaymentIntentNotFoundError,
+    PaymentMethodCustomerMismatchError,
+    PaymentMethodInactiveError,
 )
+from app.services.payment_method import get_payment_method
 
 
 def create_payment_intent(
@@ -146,6 +149,40 @@ def cancel_payment_intent(
         )
 
     payment_intent.status = "canceled"
+
+    session.commit()
+    session.refresh(payment_intent)
+
+    return payment_intent
+
+
+def attach_payment_method(
+    session: Session,
+    merchant_id: uuid.UUID,
+    payment_intent_id: uuid.UUID,
+    payment_method_id: uuid.UUID,
+) -> PaymentIntent:
+    """Attach a merchant-owned payment method to a payment intent."""
+
+    payment_intent = get_payment_intent(
+        session=session,
+        merchant_id=merchant_id,
+        payment_intent_id=payment_intent_id,
+    )
+
+    payment_method = get_payment_method(
+        session=session,
+        merchant_id=merchant_id,
+        payment_method_id=payment_method_id,
+    )
+
+    if payment_method.status != "active":
+        raise PaymentMethodInactiveError(payment_method.id)
+
+    if payment_method.customer_id != payment_intent.customer_id:
+        raise PaymentMethodCustomerMismatchError(payment_method.id)
+
+    payment_intent.payment_method_id = payment_method.id
 
     session.commit()
     session.refresh(payment_intent)
