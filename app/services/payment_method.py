@@ -83,3 +83,24 @@ def list_payment_methods(
     )
 
     return list(session.scalars(statement))
+
+
+def deactivate_payment_method(
+    session: Session,
+    merchant_id: uuid.UUID,
+    payment_method_id: uuid.UUID,
+) -> PaymentMethod:
+    """Mark a merchant-owned payment method inactive."""
+
+    payment_method = get_payment_method(
+        session=session,
+        merchant_id=merchant_id,
+        payment_method_id=payment_method_id,
+    )
+
+    payment_method.status = "inactive"
+
+    session.commit()
+    session.refresh(payment_method)
+
+    return payment_method

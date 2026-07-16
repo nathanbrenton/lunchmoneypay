@@ -408,3 +408,122 @@ def test_list_payment_methods_returns_empty_list(
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_deactivate_payment_method_uses_authenticated_merchant(
+    monkeypatch,
+) -> None:
+    """Deactivate a payment method within the authenticated merchant boundary."""
+
+    merchant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+    timestamp = datetime.now(UTC)
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=customer_id,
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="inactive",
+        test_scenario="success",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    received_arguments = {}
+
+    def fake_deactivate_payment_method(
+        session,
+        merchant_id,
+        payment_method_id,
+    ):
+        received_arguments["merchant_id"] = merchant_id
+        received_arguments["payment_method_id"] = payment_method_id
+        return payment_method
+
+    monkeypatch.setattr(
+        payment_methods,
+        "deactivate_payment_method",
+        fake_deactivate_payment_method,
+        raising=False,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-methods/{payment_method_id}/deactivate",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(payment_method_id)
+    assert response.json()["merchant_id"] == str(merchant_id)
+    assert response.json()["status"] == "inactive"
+
+    assert received_arguments == {
+        "merchant_id": merchant_id,
+        "payment_method_id": payment_method_id,
+    }
+
+
+def test_deactivate_payment_method_returns_not_found(
+    monkeypatch,
+) -> None:
+    """Return 404 when the payment method is not merchant-accessible."""
+
+    merchant_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    credential = MerchantApiCredential(
+        id=uuid.uuid4(),
+        merchant_id=merchant_id,
+        key_prefix="lmp_test_a1b2c3d4e5f6",
+        secret_hash="stored-hash",
+        status="active",
+    )
+
+    def raise_not_found(
+        session,
+        merchant_id,
+        payment_method_id,
+    ):
+        raise payment_methods.PaymentMethodNotFoundError(
+            payment_method_id,
+        )
+
+    monkeypatch.setattr(
+        payment_methods,
+        "deactivate_payment_method",
+        raise_not_found,
+    )
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
+
+    try:
+        response = client.post(
+            f"/api/v1/payment-methods/{payment_method_id}/deactivate",
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Payment method not found.",
+    }

@@ -16,6 +16,7 @@ from app.services.exceptions import (
 )
 from app.services.payment_method import (
     create_payment_method,
+    deactivate_payment_method,
     get_payment_method,
     list_payment_methods,
 )
@@ -89,3 +90,27 @@ def list_payment_methods_endpoint(
         session=session,
         merchant_id=credential.merchant_id,
     )
+
+
+@router.post(
+    "/{payment_method_id}/deactivate",
+    response_model=PaymentMethodRead,
+)
+def deactivate_payment_method_endpoint(
+    payment_method_id: uuid.UUID,
+    credential: AuthenticatedCredential,
+    session: DatabaseSession,
+) -> PaymentMethod:
+    """Deactivate a payment method owned by the authenticated merchant."""
+
+    try:
+        return deactivate_payment_method(
+            session=session,
+            merchant_id=credential.merchant_id,
+            payment_method_id=payment_method_id,
+        )
+    except PaymentMethodNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment method not found.",
+        ) from exc

@@ -12,6 +12,7 @@ from app.schemas.payment_method import PaymentMethodCreate
 from app.services.exceptions import PaymentMethodNotFoundError
 from app.services.payment_method import (
     create_payment_method,
+    deactivate_payment_method,
     get_payment_method,
     list_payment_methods,
 )
@@ -175,3 +176,76 @@ def test_list_payment_methods_filters_by_merchant_and_orders_results() -> None:
     assert "payment_methods.merchant_id" in compiled
     assert "payment_methods.created_at" in compiled
     assert "payment_methods.id" in compiled
+
+
+def test_deactivate_payment_method_marks_merchant_owned_record_inactive() -> None:
+    """Deactivate a payment method owned by the authenticated merchant."""
+
+    session = MagicMock(spec=Session)
+    merchant_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=merchant_id,
+        customer_id=uuid.uuid4(),
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="success",
+    )
+
+    session.get.return_value = payment_method
+
+    result = deactivate_payment_method(
+        session=session,
+        merchant_id=merchant_id,
+        payment_method_id=payment_method_id,
+    )
+
+    assert result is payment_method
+    assert result.status == "inactive"
+
+    session.get.assert_called_once_with(
+        PaymentMethod,
+        payment_method_id,
+    )
+    session.commit.assert_called_once_with()
+    session.refresh.assert_called_once_with(payment_method)
+
+
+def test_deactivate_payment_method_rejects_other_merchant_record() -> None:
+    """Reject deactivation of a payment method owned by another merchant."""
+
+    session = MagicMock(spec=Session)
+    authenticated_merchant_id = uuid.uuid4()
+    other_merchant_id = uuid.uuid4()
+    payment_method_id = uuid.uuid4()
+
+    payment_method = PaymentMethod(
+        id=payment_method_id,
+        merchant_id=other_merchant_id,
+        customer_id=uuid.uuid4(),
+        type="card",
+        card_brand="visa",
+        card_last4="4242",
+        card_exp_month=12,
+        card_exp_year=2030,
+        status="active",
+        test_scenario="success",
+    )
+
+    session.get.return_value = payment_method
+
+    with pytest.raises(PaymentMethodNotFoundError):
+        deactivate_payment_method(
+            session=session,
+            merchant_id=authenticated_merchant_id,
+            payment_method_id=payment_method_id,
+        )
+
+    session.commit.assert_not_called()
+    session.refresh.assert_not_called()
