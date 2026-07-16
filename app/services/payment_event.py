@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.payment_event import PaymentEvent
 from app.models.payment_intent import PaymentIntent
+from app.models.refund import Refund
 from app.services.exceptions import PaymentEventNotFoundError
 
 
@@ -82,3 +83,29 @@ def list_payment_events(
     )
 
     return list(session.scalars(statement).all())
+
+
+def create_refund_event(
+    session: Session,
+    refund: Refund,
+    payment_intent: PaymentIntent,
+) -> PaymentEvent:
+    """Add a refund snapshot to the current transaction."""
+
+    event = PaymentEvent(
+        merchant_id=refund.merchant_id,
+        payment_intent_id=payment_intent.id,
+        event_type="refund.succeeded",
+        payload={
+            "id": str(refund.id),
+            "payment_intent_id": str(payment_intent.id),
+            "external_reference": refund.external_reference,
+            "amount_minor": refund.amount_minor,
+            "currency": refund.currency,
+            "status": refund.status,
+        },
+    )
+
+    session.add(event)
+
+    return event

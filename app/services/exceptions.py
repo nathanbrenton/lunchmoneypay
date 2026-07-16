@@ -79,3 +79,19 @@ class PaymentMethodRequiredError(Exception):
 
 class PaymentEventNotFoundError(Exception):
     """Raised when a payment event is not accessible to a merchant."""
+
+
+class RefundAlreadyExistsError(Exception):
+    """Raised when a merchant reuses a refund external reference."""
+
+
+class RefundNotFoundError(Exception):
+    """Raised when a refund cannot be found for a merchant."""
+
+
+class PaymentIntentNotRefundableError(Exception):
+    """Raised when a payment intent is not eligible for a refund."""
+
+
+class RefundAmountExceedsAvailableError(Exception):
+    """Raised when a refund exceeds the remaining refundable amount."""

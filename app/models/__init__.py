@@ -6,6 +6,7 @@ from app.models.merchant_api_credential import MerchantApiCredential
 from app.models.payment_event import PaymentEvent
 from app.models.payment_intent import PaymentIntent
 from app.models.payment_method import PaymentMethod
+from app.models.refund import Refund
 
 __all__ = [
     "Customer",
@@ -14,4 +15,5 @@ __all__ = [
     "PaymentEvent",
     "PaymentIntent",
     "PaymentMethod",
+    "Refund",
 ]

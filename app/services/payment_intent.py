@@ -138,9 +138,6 @@ def confirm_payment_intent(
         payment_intent.status = "succeeded"
         payment_intent.last_error_code = None
 
-    session.commit()
-    session.refresh(payment_intent)
-
     if payment_intent.status == "succeeded":
         event_type = "payment_intent.succeeded"
     else:
@@ -151,6 +148,9 @@ def confirm_payment_intent(
         payment_intent=payment_intent,
         event_type=event_type,
     )
+
+    session.commit()
+    session.refresh(payment_intent)
 
     return payment_intent
 
@@ -176,14 +176,14 @@ def cancel_payment_intent(
 
     payment_intent.status = "canceled"
 
-    session.commit()
-    session.refresh(payment_intent)
-
     create_payment_event(
         session=session,
         payment_intent=payment_intent,
         event_type="payment_intent.canceled",
     )
+
+    session.commit()
+    session.refresh(payment_intent)
 
     return payment_intent
 

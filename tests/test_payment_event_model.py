@@ -65,3 +65,15 @@ def test_payment_event_has_supported_event_type_constraint() -> None:
     assert "payment_intent.succeeded" in sql_text
     assert "payment_intent.payment_failed" in sql_text
     assert "payment_intent.canceled" in sql_text
+
+
+def test_payment_event_supports_refund_success() -> None:
+    """Allow durable successful-refund lifecycle events."""
+
+    constraint = next(
+        constraint
+        for constraint in PaymentEvent.__table__.constraints
+        if constraint.name == "ck_payment_events_event_type"
+    )
+
+    assert "refund.succeeded" in str(constraint.sqltext)

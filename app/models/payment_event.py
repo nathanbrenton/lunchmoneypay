@@ -20,7 +20,8 @@ class PaymentEvent(Base):
             "event_type IN ("
             "'payment_intent.succeeded', "
             "'payment_intent.payment_failed', "
-            "'payment_intent.canceled'"
+            "'payment_intent.canceled', "
+            "'refund.succeeded'"
             ")",
             name="ck_payment_events_event_type",
         ),
