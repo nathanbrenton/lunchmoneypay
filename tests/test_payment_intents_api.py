@@ -59,6 +59,7 @@ def test_create_payment_intent_uses_authenticated_merchant(
         session,
         merchant_id,
         payment_intent_create,
+        idempotency_key=None,
     ):
         received_arguments["merchant_id"] = merchant_id
         received_arguments["payment_intent_create"] = payment_intent_create
@@ -121,6 +122,7 @@ def test_create_payment_intent_returns_not_found_for_invalid_customer(
         session,
         merchant_id,
         payment_intent_create,
+        idempotency_key=None,
     ):
         raise payment_intents.CustomerNotFoundError(
             payment_intent_create.customer_id,
@@ -174,6 +176,7 @@ def test_create_payment_intent_returns_conflict_for_duplicate_reference(
         session,
         merchant_id,
         payment_intent_create,
+        idempotency_key=None,
     ):
         raise payment_intents.PaymentIntentAlreadyExistsError(
             payment_intent_create.external_reference,

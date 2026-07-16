@@ -65,6 +65,7 @@ def test_create_refund_uses_authenticated_merchant(
         session,
         merchant_id,
         refund_create,
+        idempotency_key=None,
     ):
         received_arguments["merchant_id"] = merchant_id
         received_arguments["refund_create"] = refund_create
@@ -109,6 +110,7 @@ def test_create_refund_rejects_amount_above_available(
         session,
         merchant_id,
         refund_create,
+        idempotency_key=None,
     ):
         raise refunds.RefundAmountExceedsAvailableError(
             refund_create.amount_minor,

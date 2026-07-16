@@ -18,6 +18,12 @@ from app.services.exceptions import (
     PaymentMethodInactiveError,
     PaymentMethodRequiredError,
 )
+from app.services.idempotency import (
+    create_idempotency_record,
+    get_idempotency_record,
+    hash_request_payload,
+    validate_idempotency_replay,
+)
 from app.services.payment_event import create_payment_event
 from app.services.payment_method import get_payment_method
 from app.services.webhook import dispatch_payment_event_safely
@@ -27,8 +33,31 @@ def create_payment_intent(
     session: Session,
     merchant_id: uuid.UUID,
     payment_intent_create: PaymentIntentCreate,
+    idempotency_key: str | None = None,
 ) -> PaymentIntent:
-    """Create a payment intent for a merchant-owned customer."""
+    """Create or replay a payment intent for a merchant-owned customer."""
+
+    request_hash = hash_request_payload(payment_intent_create)
+
+    if idempotency_key is not None:
+        existing_record = get_idempotency_record(
+            session=session,
+            merchant_id=merchant_id,
+            idempotency_key=idempotency_key,
+        )
+
+        if existing_record is not None:
+            validate_idempotency_replay(
+                record=existing_record,
+                operation="payment_intent.create",
+                request_hash=request_hash,
+                resource_type="payment_intent",
+            )
+            return get_payment_intent(
+                session=session,
+                merchant_id=merchant_id,
+                payment_intent_id=existing_record.resource_id,
+            )
 
     customer = session.get(
         Customer,
@@ -41,6 +70,7 @@ def create_payment_intent(
         )
 
     payment_intent = PaymentIntent(
+        id=uuid.uuid4(),
         merchant_id=merchant_id,
         customer_id=payment_intent_create.customer_id,
         external_reference=payment_intent_create.external_reference,
@@ -49,6 +79,18 @@ def create_payment_intent(
     )
 
     session.add(payment_intent)
+
+    if idempotency_key is not None:
+        session.add(
+            create_idempotency_record(
+                merchant_id=merchant_id,
+                idempotency_key=idempotency_key,
+                operation="payment_intent.create",
+                request_hash=request_hash,
+                resource_type="payment_intent",
+                resource_id=payment_intent.id,
+            )
+        )
 
     try:
         session.commit()

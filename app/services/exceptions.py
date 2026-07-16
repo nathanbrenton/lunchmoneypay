@@ -111,3 +111,7 @@ class WebhookDeliveryNotFoundError(Exception):
 
 class WebhookDeliveryNotRetryableError(Exception):
     """Raised when a webhook delivery cannot be retried."""
+
+
+class IdempotencyKeyConflictError(Exception):
+    """Raised when an idempotency key is reused for another request."""

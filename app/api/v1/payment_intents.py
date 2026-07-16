@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 
 from app.api.dependencies import AuthenticatedCredential, DatabaseSession
 from app.models.payment_intent import PaymentIntent
@@ -13,6 +13,7 @@ from app.schemas.payment_intent import (
 )
 from app.services.exceptions import (
     CustomerNotFoundError,
+    IdempotencyKeyConflictError,
     PaymentIntentAlreadyExistsError,
     PaymentIntentInvalidStateError,
     PaymentIntentNotFoundError,
@@ -45,6 +46,12 @@ def create_payment_intent_endpoint(
     payment_intent_create: PaymentIntentCreate,
     credential: AuthenticatedCredential,
     session: DatabaseSession,
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
 ) -> PaymentIntent:
     """Create a payment intent for the authenticated merchant."""
 
@@ -53,7 +60,13 @@ def create_payment_intent_endpoint(
             session=session,
             merchant_id=credential.merchant_id,
             payment_intent_create=payment_intent_create,
+            idempotency_key=idempotency_key,
         )
+    except IdempotencyKeyConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Idempotency key was already used for a different request.",
+        ) from exc
     except CustomerNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

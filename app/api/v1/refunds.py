@@ -2,12 +2,13 @@
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 
 from app.api.dependencies import AuthenticatedCredential, DatabaseSession
 from app.models.refund import Refund
 from app.schemas.refund import RefundCreate, RefundRead
 from app.services.exceptions import (
+    IdempotencyKeyConflictError,
     PaymentIntentNotFoundError,
     PaymentIntentNotRefundableError,
     RefundAlreadyExistsError,
@@ -35,6 +36,12 @@ def create_refund_endpoint(
     refund_create: RefundCreate,
     credential: AuthenticatedCredential,
     session: DatabaseSession,
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+    ),
 ) -> Refund:
     """Create a refund for the authenticated merchant."""
 
@@ -43,7 +50,13 @@ def create_refund_endpoint(
             session=session,
             merchant_id=credential.merchant_id,
             refund_create=refund_create,
+            idempotency_key=idempotency_key,
         )
+    except IdempotencyKeyConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Idempotency key was already used for a different request.",
+        ) from exc
     except PaymentIntentNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

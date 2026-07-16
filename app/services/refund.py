@@ -14,6 +14,12 @@ from app.services.exceptions import (
     RefundAmountExceedsAvailableError,
     RefundNotFoundError,
 )
+from app.services.idempotency import (
+    create_idempotency_record,
+    get_idempotency_record,
+    hash_request_payload,
+    validate_idempotency_replay,
+)
 from app.services.payment_event import create_refund_event
 from app.services.payment_intent import get_payment_intent
 from app.services.webhook import dispatch_payment_event_safely
@@ -23,8 +29,31 @@ def create_refund(
     session: Session,
     merchant_id: uuid.UUID,
     refund_create: RefundCreate,
+    idempotency_key: str | None = None,
 ) -> Refund:
-    """Create a synchronous refund against a succeeded payment intent."""
+    """Create or replay a refund against a succeeded payment intent."""
+
+    request_hash = hash_request_payload(refund_create)
+
+    if idempotency_key is not None:
+        existing_record = get_idempotency_record(
+            session=session,
+            merchant_id=merchant_id,
+            idempotency_key=idempotency_key,
+        )
+
+        if existing_record is not None:
+            validate_idempotency_replay(
+                record=existing_record,
+                operation="refund.create",
+                request_hash=request_hash,
+                resource_type="refund",
+            )
+            return get_refund(
+                session=session,
+                merchant_id=merchant_id,
+                refund_id=existing_record.resource_id,
+            )
 
     payment_intent = get_payment_intent(
         session=session,
@@ -67,6 +96,18 @@ def create_refund(
 
     session.add(refund)
     session.flush()
+
+    if idempotency_key is not None:
+        session.add(
+            create_idempotency_record(
+                merchant_id=merchant_id,
+                idempotency_key=idempotency_key,
+                operation="refund.create",
+                request_hash=request_hash,
+                resource_type="refund",
+                resource_id=refund.id,
+            )
+        )
 
     payment_event = create_refund_event(
         session=session,
