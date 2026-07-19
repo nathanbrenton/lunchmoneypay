@@ -36,7 +36,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "event_type IN ('payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.canceled')",
+            "event_type IN ('payment_intent.succeeded', "
+            "'payment_intent.payment_failed', 'payment_intent.canceled')",
             name="ck_payment_events_event_type",
         ),
         sa.ForeignKeyConstraint(

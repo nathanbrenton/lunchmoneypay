@@ -26,7 +26,7 @@ class PaymentIntent(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('requires_payment_method', 'processing', "
-            "'succeeded', 'canceled')",
+            "'succeeded', 'failed', 'canceled')",
             name="ck_payment_intents_status",
         ),
         CheckConstraint(

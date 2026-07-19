@@ -80,9 +80,7 @@ def test_get_authenticated_credential_rejects_inactive_key(
     session = MagicMock(spec=Session)
 
     def raise_inactive(session, api_key, pepper):
-        raise dependencies.InactiveApiCredentialError(
-            "API credential is not active."
-        )
+        raise dependencies.InactiveApiCredentialError("API credential is not active.")
 
     monkeypatch.setattr(
         dependencies,

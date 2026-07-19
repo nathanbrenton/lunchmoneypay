@@ -45,8 +45,7 @@ def test_customer_defines_expected_defaults() -> None:
 
 def test_customer_external_reference_is_unique_per_merchant() -> None:
     constraint_names = {
-        constraint.name
-        for constraint in Customer.__table__.constraints
+        constraint.name for constraint in Customer.__table__.constraints
     }
 
     assert "uq_customers_merchant_external_reference" in constraint_names

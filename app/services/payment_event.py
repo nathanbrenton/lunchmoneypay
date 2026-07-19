@@ -16,25 +16,29 @@ def create_payment_event(
     payment_intent: PaymentIntent,
     event_type: str,
 ) -> PaymentEvent:
-    """Persist a snapshot of a payment-intent lifecycle event."""
+    """Persist a safe snapshot of a payment-intent lifecycle event."""
+
+    payload: dict[str, object] = {
+        "id": str(payment_intent.id),
+        "external_reference": payment_intent.external_reference,
+        "amount_minor": payment_intent.amount_minor,
+        "currency": payment_intent.currency,
+        "status": payment_intent.status,
+        "last_error_code": payment_intent.last_error_code,
+    }
+    method = getattr(payment_intent, "_event_payment_method_summary", None)
+    if method is not None:
+        payload["payment_method"] = method
 
     event = PaymentEvent(
         merchant_id=payment_intent.merchant_id,
         payment_intent_id=payment_intent.id,
         event_type=event_type,
-        payload={
-            "id": str(payment_intent.id),
-            "external_reference": payment_intent.external_reference,
-            "amount_minor": payment_intent.amount_minor,
-            "currency": payment_intent.currency,
-            "status": payment_intent.status,
-            "last_error_code": payment_intent.last_error_code,
-        },
+        payload=payload,
     )
 
     # The calling lifecycle operation owns the transaction commit.
     session.add(event)
-
     return event
 
 
@@ -45,10 +49,7 @@ def get_payment_event(
 ) -> PaymentEvent:
     """Return a payment event owned by the specified merchant."""
 
-    payment_event = session.get(
-        PaymentEvent,
-        payment_event_id,
-    )
+    payment_event = session.get(PaymentEvent, payment_event_id)
 
     if payment_event is None or payment_event.merchant_id != merchant_id:
         raise PaymentEventNotFoundError(payment_event_id)
@@ -74,14 +75,9 @@ def list_payment_events(
         )
 
     if event_type is not None:
-        statement = statement.where(
-            PaymentEvent.event_type == event_type,
-        )
+        statement = statement.where(PaymentEvent.event_type == event_type)
 
-    statement = statement.order_by(
-        PaymentEvent.created_at.desc(),
-    )
-
+    statement = statement.order_by(PaymentEvent.created_at.desc())
     return list(session.scalars(statement).all())
 
 
@@ -105,7 +101,5 @@ def create_refund_event(
             "status": refund.status,
         },
     )
-
     session.add(event)
-
     return event

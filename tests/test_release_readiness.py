@@ -63,5 +63,5 @@ def test_release_version_is_consistent() -> None:
     settings = get_settings()
     pyproject = Path("pyproject.toml").read_text()
 
-    assert settings.app_version == "0.2.0"
-    assert 'version = "0.2.0"' in pyproject
+    assert settings.app_version == "0.3.0"
+    assert 'version = "0.3.0"' in pyproject

@@ -75,7 +75,7 @@ def test_payment_intent_has_status_check_constraint() -> None:
 
     assert (
         "status IN "
-        "('requires_payment_method', 'processing', 'succeeded', 'canceled')"
+        "('requires_payment_method', 'processing', 'succeeded', 'failed', 'canceled')"
         in constraint_sql
     )
 

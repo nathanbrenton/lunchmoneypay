@@ -176,6 +176,7 @@ def confirm_payment_intent(
     test_scenario = payment_method.test_scenario
 
     if test_scenario == "card_declined":
+        payment_intent.status = "failed"
         payment_intent.last_error_code = "card_declined"
     else:
         payment_intent.status = "succeeded"
@@ -186,6 +187,11 @@ def confirm_payment_intent(
     else:
         event_type = "payment_intent.payment_failed"
 
+    payment_intent._event_payment_method_summary = {
+        "type": payment_method.type,
+        "brand": payment_method.card_brand,
+        "last4": payment_method.card_last4,
+    }
     payment_event = create_payment_event(
         session=session,
         payment_intent=payment_intent,

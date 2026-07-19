@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a minimal LunchMoneyPay demo account and payment workflow."""
+"""Create a Century Solar-oriented LunchMoneyPay demo merchant and checkout."""
 
 import argparse
 import json
@@ -27,19 +27,12 @@ def request_json(
     if payload is not None:
         body = json.dumps(payload).encode()
         headers["Content-Type"] = "application/json"
-
     if api_key is not None:
         headers["X-API-Key"] = api_key
-
     if idempotency_key is not None:
         headers["Idempotency-Key"] = idempotency_key
 
-    request = Request(
-        url,
-        data=body,
-        headers=headers,
-        method=method,
-    )
+    request = Request(url, data=body, headers=headers, method=method)
 
     try:
         with urlopen(request, timeout=10) as response:
@@ -58,22 +51,25 @@ def request_json(
 
 
 def main() -> int:
-    """Create and print a demo merchant payment workflow."""
+    """Create a merchant credential and bounded demo checkout."""
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--base-url", default="http://127.0.0.1:18531")
+    parser.add_argument("--merchant-name", default=None)
     parser.add_argument(
-        "--base-url",
-        default="http://127.0.0.1:8000",
+        "--scenario",
+        choices=("success", "card_declined"),
+        default="success",
     )
-    parser.add_argument(
-        "--merchant-name",
-        default=None,
-    )
+    parser.add_argument("--amount-minor", type=int, default=125000)
     args = parser.parse_args()
+
+    if args.amount_minor <= 0:
+        parser.error("--amount-minor must be positive.")
 
     base_url = args.base_url.rstrip("/")
     suffix = uuid.uuid4().hex[:10]
-    merchant_name = args.merchant_name or f"ChoreTracker Demo {suffix}"
+    merchant_name = args.merchant_name or f"Century Solar Demo {suffix}"
 
     merchant = request_json(
         "POST",
@@ -88,67 +84,29 @@ def main() -> int:
     )
     api_key = credential["api_key"]
 
-    customer = request_json(
+    checkout = request_json(
         "POST",
-        f"{base_url}/api/v1/customers",
+        f"{base_url}/api/v1/checkout-sessions",
         api_key=api_key,
+        idempotency_key=f"century-bootstrap-payment-{suffix}",
         payload={
-            "external_reference": f"choretracker-user-{suffix}",
-            "display_name": "ChoreTracker Demo User",
-            "email": f"demo-{suffix}@example.test",
-        },
-    )
-
-    payment_method = request_json(
-        "POST",
-        f"{base_url}/api/v1/payment-methods",
-        api_key=api_key,
-        payload={
-            "customer_id": customer["id"],
-            "card_brand": "visa",
-            "card_last4": "4242",
-            "card_exp_month": 12,
-            "card_exp_year": 2030,
-            "test_scenario": "success",
-        },
-    )
-
-    payment_intent = request_json(
-        "POST",
-        f"{base_url}/api/v1/payment-intents",
-        api_key=api_key,
-        idempotency_key=f"demo-payment-{suffix}",
-        payload={
-            "customer_id": customer["id"],
-            "external_reference": f"choretracker-payment-{suffix}",
-            "amount_minor": 2500,
+            "customer_external_reference": f"century-customer-{suffix}",
+            "customer_display_name": "Century Solar Demo Customer",
+            "customer_email": f"century-demo-{suffix}@example.com",
+            "external_reference": f"century-order-{suffix}",
+            "amount_minor": args.amount_minor,
             "currency": "USD",
+            "test_scenario": args.scenario,
         },
-    )
-
-    payment_intent = request_json(
-        "POST",
-        (
-            f"{base_url}/api/v1/payment-intents/"
-            f"{payment_intent['id']}/attach-payment-method"
-        ),
-        api_key=api_key,
-        payload={"payment_method_id": payment_method["id"]},
-    )
-
-    payment_intent = request_json(
-        "POST",
-        f"{base_url}/api/v1/payment-intents/{payment_intent['id']}/confirm",
-        api_key=api_key,
     )
 
     output = {
         "merchant_id": merchant_id,
         "api_key": api_key,
-        "customer_id": customer["id"],
-        "payment_method_id": payment_method["id"],
-        "payment_intent_id": payment_intent["id"],
-        "payment_status": payment_intent["status"],
+        "checkout_session_id": checkout["checkout_session_id"],
+        "payment_intent_id": checkout["payment_intent_id"],
+        "payment_status": checkout["status"],
+        "payment_method": checkout["payment_method"],
         "suggested_webhook_secret": secrets.token_urlsafe(32),
     }
 

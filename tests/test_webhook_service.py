@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
+import pytest
 from sqlalchemy.orm import Session
 
 import app.services.webhook as webhook_service
@@ -278,3 +279,20 @@ def test_retry_webhook_delivery_creates_new_attempt(
     assert result is retried_delivery
     session.commit.assert_called_once_with()
     session.refresh.assert_called_once_with(retried_delivery)
+
+
+def test_validated_webhook_url_rejects_non_http_and_credentials() -> None:
+    """Revalidate persisted endpoint data before any network operation."""
+
+    with pytest.raises(ValueError, match="absolute HTTP"):
+        webhook_service._validated_webhook_url("file:///tmp/webhook")
+
+    with pytest.raises(ValueError, match="absolute HTTP"):
+        webhook_service._validated_webhook_url(
+            "https://username:password@example.com/webhook"
+        )
+
+    assert (
+        webhook_service._validated_webhook_url("https://example.com/webhook")
+        == "https://example.com/webhook"
+    )

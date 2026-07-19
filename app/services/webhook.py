@@ -6,6 +6,7 @@ import json
 import time
 import uuid
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from sqlalchemy import select
@@ -23,6 +24,19 @@ from app.services.exceptions import (
     WebhookEndpointNotFoundError,
 )
 from app.services.payment_event import get_payment_event
+
+
+def _validated_webhook_url(value: str) -> str:
+    """Fail closed if persisted endpoint data bypasses request-schema validation."""
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("Webhook endpoint must be an absolute HTTP(S) URL.")
+    return value
 
 
 def create_webhook_endpoint(
@@ -146,7 +160,7 @@ def _deliver_to_endpoint(
         payload_body,
     )
     request = Request(
-        endpoint.url,
+        _validated_webhook_url(endpoint.url),
         data=payload_body,
         headers={
             "Content-Type": "application/json",
@@ -160,7 +174,11 @@ def _deliver_to_endpoint(
     error_message = None
 
     try:
-        with urlopen(request, timeout=timeout_seconds) as response:
+        # The persisted URL is revalidated above as HTTP(S) before dispatch.
+        with urlopen(  # nosec B310
+            request,
+            timeout=timeout_seconds,
+        ) as response:
             response_status = response.status
             delivery_status = "succeeded" if 200 <= response.status < 300 else "failed"
     except HTTPError as exc:

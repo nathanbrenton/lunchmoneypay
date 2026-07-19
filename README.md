@@ -2,21 +2,21 @@
 
 LunchMoneyPay is a personal, non-commercial mock payment processor for local
 service-to-service integration development. It models realistic payment
-workflows without processing real money or storing real card numbers.
-
-The first integration target is ChoreTracker.
+workflows without processing real money or accepting real payment-card data.
+The primary integration target is now Century Solar.
 
 ## MVP capabilities
 
 - Merchant accounts and one-time API-key issuance
 - Merchant-scoped customer records
-- Reusable mock card payment methods
+- Reusable mock payment methods
 - Successful and controlled-decline payment scenarios
 - Payment-intent attachment, confirmation, cancellation, and history
+- Development-only bounded checkout-session orchestration
 - Full and partial refunds
 - Durable payment and refund events
-- Signed webhook registration, automatic delivery, delivery history, and retry
-- Idempotent payment-intent and refund creation
+- Signed webhook registration, delivery history, and retry
+- Idempotent payment-intent, checkout, and refund creation
 - Health and database-readiness endpoints
 
 ## Technology
@@ -31,84 +31,67 @@ The first integration target is ChoreTracker.
 
 ## Safety boundary
 
-LunchMoneyPay is a development simulator. Do not use real payment-card data,
-real processor secrets, or production financial information.
+LunchMoneyPay is a development simulator. Never use real payment-card data,
+processor credentials, production financial information, or real customer
+payment methods. The direct demo checkout is restricted to development/test and
+must be disabled in staging and production.
 
 ## Local setup
 
-Create the environment file:
-
-    cp .env.example .env
-
-Replace `API_KEY_PEPPER` with a long random value. Start PostgreSQL using the
-project's normal Docker Compose workflow, then apply migrations:
-
-    alembic upgrade head
-
-Start the API:
-
-    uvicorn app.main:app --host 127.0.0.1 --port 8000
+```bash
+cp .env.example .env;
+python3.13 -m venv .venv;
+source .venv/bin/activate;
+python -m pip install --upgrade pip;
+python -m pip install -e '.[dev]';
+docker compose up -d postgres;
+alembic upgrade head;
+uvicorn app.main:app --host 127.0.0.1 --port 18531;
+```
 
 Useful URLs:
 
-- API documentation: `http://127.0.0.1:8000/docs`
-- Process health: `http://127.0.0.1:8000/api/v1/health`
-- Database readiness: `http://127.0.0.1:8000/api/v1/ready`
+- API documentation: `http://127.0.0.1:18531/docs`
+- Process health: `http://127.0.0.1:18531/api/v1/health`
+- Database readiness: `http://127.0.0.1:18531/api/v1/ready`
 
-## Demo bootstrap
+## Century Solar bootstrap
 
-With the API running, create a demo merchant, credential, customer, successful
-mock card, and payment intent:
+With the API running:
 
-    python scripts/bootstrap_demo.py
+```bash
+python scripts/bootstrap_demo.py;
+```
 
-The script prints the generated IDs and plaintext merchant API key. The API key
-is returned only during credential creation; store it securely for local use.
-
-Use a custom API URL when needed:
-
-    python scripts/bootstrap_demo.py --base-url http://127.0.0.1:8000
-
-## Authentication
+The script creates a demo merchant, one-time API credential, and a bounded
+checkout session. The API key is printed only because the local Century Solar
+integration needs it; keep it outside source control.
 
 Merchant-scoped endpoints require:
 
-    X-API-Key: <merchant API key>
+```text
+X-API-Key: <merchant API key>
+```
 
-Payment-intent and refund creation optionally accept:
+Idempotent create operations use:
 
-    Idempotency-Key: <unique client-generated key>
+```text
+Idempotency-Key: <unique client-generated key>
+```
 
-Reusing the same key with the same request returns the original resource.
-Reusing it with different request content returns HTTP `409`.
-
-## Webhooks
-
-Webhook requests include:
-
-- `LunchMoneyPay-Event-Id`
-- `LunchMoneyPay-Signature`
-
-The signature format is:
-
-    t=<unix_timestamp>,v1=<hmac_sha256>
-
-The signed message is:
-
-    <timestamp>.<raw_request_body>
-
-See [docs/choretracker-integration.md](docs/choretracker-integration.md) for the
-recommended ChoreTracker workflow and a Python verification example.
+See [docs/century-solar-integration.md](docs/century-solar-integration.md) for
+the exact checkout and webhook contract.
 
 ## Validation
 
-Run all checks before committing:
-
-    ruff check .
-    pytest -v
+```bash
+ruff check .;
+ruff format --check .;
+pytest -v;
+```
 
 ## Current release
 
-Version `0.2.0` is the integration-ready MVP baseline for ChoreTracker.
-Advanced retry scheduling, asynchronous queues, production observability, and
-third-party processor behavior are intentionally deferred.
+Version `0.3.0` adds the Century Solar development checkout contract. Hosted
+checkout, real acquiring behavior, asynchronous production queues, production
+observability, and formal compliance assessment remain outside this simulator.

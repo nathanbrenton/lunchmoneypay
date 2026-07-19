@@ -24,9 +24,7 @@ def test_whoami_returns_authenticated_context() -> None:
         status="active",
     )
 
-    app.dependency_overrides[get_authenticated_credential] = (
-        lambda: credential
-    )
+    app.dependency_overrides[get_authenticated_credential] = lambda: credential
 
     try:
         response = client.get("/api/v1/auth/whoami")

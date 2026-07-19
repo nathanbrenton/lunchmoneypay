@@ -469,7 +469,7 @@ def test_confirm_payment_intent_records_controlled_decline() -> None:
     )
 
     assert result is payment_intent
-    assert result.status == "requires_payment_method"
+    assert result.status == "failed"
     assert result.last_error_code == "card_declined"
     session.commit.assert_called_once_with()
     session.refresh.assert_called_once_with(payment_intent)
@@ -779,7 +779,7 @@ def test_confirm_payment_intent_uses_attached_payment_method_scenario() -> None:
     )
 
     assert result is payment_intent
-    assert result.status == "requires_payment_method"
+    assert result.status == "failed"
     assert result.last_error_code == "card_declined"
 
     session.commit.assert_called_once_with()
@@ -831,7 +831,7 @@ def test_confirm_payment_intent_uses_attached_decline_scenario() -> None:
     )
 
     assert result is payment_intent
-    assert result.status == "requires_payment_method"
+    assert result.status == "failed"
     assert result.last_error_code == "card_declined"
 
     session.commit.assert_called_once_with()
@@ -1059,7 +1059,7 @@ def test_confirm_payment_intent_records_failed_event(
         payment_intent_id=payment_intent_id,
     )
 
-    assert result.status == "requires_payment_method"
+    assert result.status == "failed"
     assert result.last_error_code == "card_declined"
     assert recorded_event == {
         "payment_intent": payment_intent,

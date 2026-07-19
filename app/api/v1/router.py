@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.authentication import router as authentication_router
+from app.api.v1.checkout_sessions import router as checkout_sessions_router
 from app.api.v1.customers import router as customers_router
 from app.api.v1.health import router as health_router
 from app.api.v1.merchant_api_credentials import (
@@ -21,6 +22,7 @@ settings = get_settings()
 
 api_router = APIRouter(prefix=settings.api_v1_prefix)
 api_router.include_router(authentication_router)
+api_router.include_router(checkout_sessions_router)
 api_router.include_router(customers_router)
 api_router.include_router(health_router)
 api_router.include_router(merchants_router)
